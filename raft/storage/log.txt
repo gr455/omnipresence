@@ -1,0 +1,13 @@
+{
+	"log": [
+		{
+			"entry": "boomer",
+			"term": 1
+		},
+		{
+			"entry": "stupid",
+			"term": 1
+		}
+	],
+	"log_start_idx": 0
+}
