@@ -14,7 +14,6 @@ import (
 	"math"
 	"math/rand"
 	"sync"
-	// "time"
 )
 
 type RaftPeerState int
@@ -41,6 +40,10 @@ type RaftPeerRuntimeConstants struct {
 type LeaderMeta struct {
 	NextIndex  map[string]int64
 	MatchIndex map[string]int64
+}
+
+type CandidateMeta struct {
+	VoteGranted map[string]bool
 }
 
 type LogEntry struct {
@@ -78,6 +81,7 @@ type RaftConsensusObject struct {
 
 	RaftMutex
 	LeaderMeta
+	CandidateMeta
 	RaftPeerRuntimeConstants
 }
 
@@ -95,8 +99,8 @@ func (raft *RaftConsensusObject) Initialize(id string, storage *raftstorage.Raft
 	raft.Storage = storage
 	raft.AllPeers = peers
 
-	// raft.ElectionTimer = timer.NewTimer(time.ElectionTimeoutMillis /* add func */)
-	// raft.HeartbeatTimer = timer.NewTimer(time.HeartbeatTimeMillis /* add func */)
+	raft.ElectionTimer = utils.NewTimer(raft.ElectionTimeoutMillis, raft.RequestElection)
+	// raft.HeartbeatTimer = timer.NewTimer(time.HeartbeatTimeMillis, raft.SendAppends)
 
 	// temp code for file loads
 	log, startIdx, err := raft.Storage.ReadLog()
@@ -123,7 +127,9 @@ func (raft *RaftConsensusObject) RequestElection() {
 	raft.setCurrentTerm(raft.Term + 1)
 	raft.setPeerState(RAFT_PEER_STATE_CANDIDATE)
 	raft.ElectionTimer.Restart() // Maybe re-requets election after another electiontimeout
+
 	raft.CurrentTermVotes = 1
+	raft.VoteGranted = make(map[string]bool)
 
 	lastLogIdx := raft.LogStartIdx + int64(len(raft.Log)) - 1
 	lastLogTerm := int64(-1)
@@ -133,33 +139,41 @@ func (raft *RaftConsensusObject) RequestElection() {
 	}
 	_ = lastLogTerm
 
-	raft.Network.Broadcast_RequestForVotes(raft.PeerIdentifer, raft.Term, lastLogIdx, lastLogTerm)
+	raft.Network.Broadcast_RequestForVotes(raft.PeerIdentifer, raft.Term, lastLogIdx, lastLogTerm, raft.LastCommitIndex)
 }
 
 // Recieve a request for vote, decide whether to vote
-func (raft *RaftConsensusObject) RecvVoteRequest(candidateId string, candidatePrevLogTerm, candidatePrevLogIndex, candidateTerm, leaderLastCommitIndex int64) {
-	vote := raft.DecideVote(candidateId, candidatePrevLogTerm, candidatePrevLogIndex, candidateTerm, leaderLastCommitIndex)
+func (raft *RaftConsensusObject) RecvVoteRequest(candidateId string, candidatePrevLogTerm, candidatePrevLogIndex, candidateTerm, candidateLastCommitIndex int64) {
+	vote := raft.DecideVote(candidateId, candidatePrevLogTerm, candidatePrevLogIndex, candidateTerm, candidateLastCommitIndex)
 
 	raft.Network.ToPeer_Vote(vote)
 }
 
-// Make self leader since self recvd majority votes
+// Make self leader
 func (raft *RaftConsensusObject) WinElection() {
 	fmt.Printf("INFO: WinElection called by %v for term %v\n", raft.PeerIdentifer, raft.Term)
 	raft.ElectionTimer.Stop()
 	raft.setPeerState(RAFT_PEER_STATE_LEADER)
 
 	raft.HeartbeatTimer.Restart()
-	raft.Network.Broadcast_NewLeader(raft.PeerIdentifer)
 }
 
 // Recv a vote, increment currentTermVotes, and win election if majority
-func (raft *RaftConsensusObject) RecvVote() {
-	if raft.PeerState != RAFT_PEER_STATE_CANDIDATE {
+func (raft *RaftConsensusObject) RecvVote(peerId string, granted bool, term int64) {
+	if raft.PeerState != RAFT_PEER_STATE_CANDIDATE || term != raft.Term {
 		return
 	}
 
-	raft.CurrentTermVotes++
+	raft.GlobalDataMutex.Lock()
+
+	wasGranted, ok := raft.VoteGranted[peerId]
+	if (!ok || !wasGranted) && granted {
+		raft.CurrentTermVotes++
+	}
+
+	raft.VoteGranted[peerId] = granted
+
+	raft.GlobalDataMutex.Unlock()
 
 	if raft.CurrentTermVotes > uint16(math.Ceil(float64(raft.PeerCount)/2.0)) {
 		raft.WinElection()
@@ -171,7 +185,7 @@ func (raft *RaftConsensusObject) RecvVote() {
 // If you are a candidate, you must immedately demote to follower if this happens.
 
 // Decide if current peer should vote true or false to a vote request by another peer. Only returns vote decision.
-func (raft *RaftConsensusObject) DecideVote(candidateId string, candidatePrevLogTerm, candidatePrevLogIndex, candidateTerm, leaderLastCommitIndex int64) bool {
+func (raft *RaftConsensusObject) DecideVote(candidateId string, candidatePrevLogTerm, candidatePrevLogIndex, candidateTerm, candidateLastCommitIndex int64) bool {
 	// check if you have already voted someone else this term.
 	if raft.Term > candidateTerm || (raft.TermVotePeerId != "" && raft.TermVotePeerId != candidateId) {
 		return false
@@ -183,9 +197,9 @@ func (raft *RaftConsensusObject) DecideVote(candidateId string, candidatePrevLog
 		(raft.LogStartIdx+int64(len(raft.Log)) != 0 && raft.Log[len(raft.Log)-1].Term > candidatePrevLogTerm) {
 		return false
 	}
-	raft.GlobalDataMutex.Unlock()
+	raft.GlobalDataMutex.RUnlock()
 	// Vote false if peer's commit index is higher than candidate's.
-	if raft.LastCommitIndex > leaderLastCommitIndex {
+	if raft.LastCommitIndex > candidateLastCommitIndex {
 		return false
 	}
 
@@ -257,6 +271,7 @@ func (raft *RaftConsensusObject) RecvAppendAck(peerId string, peerTerm, matchInd
 	// If self term as a leader is smaller than a peer's, step down.
 	if !raft.checkAndUpdateTerm(peerTerm) {
 		raft.setPeerState(RAFT_PEER_STATE_FOLLOWER)
+		raft.HeartbeatTimer.Stop()
 		return
 	}
 
@@ -320,6 +335,7 @@ func (raft *RaftConsensusObject) Commit(tillIdx, term int64) {
 			break
 		}
 
+		// TODO: potentially push to a queue
 		err := raft.Storage.WriteToLog(raft.Log[raft.LastCommitIndex+1-raft.LogStartIdx].Entry, term, raft.LastCommitIndex+1)
 		if err != nil {
 			fmt.Printf("Err: Could not commit to log - %v\n", err)
