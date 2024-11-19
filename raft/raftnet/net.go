@@ -84,6 +84,8 @@ func (rn *RaftNetwork) ToPeer_Vote(candidateId, voterId string, voteGranted bool
 
 // ToPeer_Append sends an append RPC to a specific peer. Releases wg
 func (rn *RaftNetwork) ToPeer_Append(peerId string, msgs []*pb.LogEntry, term int64, prevLogIndex int64, prevLogTerm int64, leaderCommit int64, leaderId string, wg *sync.WaitGroup) error {
+	defer wg.Done()
+
 	peerClient, exists := rn.GetPeerClient(peerId)
 	if !exists {
 		return errors.New("Peer is unknown\n")
@@ -108,7 +110,6 @@ func (rn *RaftNetwork) ToPeer_Append(peerId string, msgs []*pb.LogEntry, term in
 
 	log.Printf("Sent append to: %s", peerId)
 
-	wg.Done()
 	return nil
 }
 
