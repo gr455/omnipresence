@@ -1,3 +1,6 @@
+.PHONY: protogen build buildrace
+.DEFAULT_GOAL := build
+
 protogen:
 	@protoc \
 		--go_out=raft/service/genproto \
@@ -7,4 +10,7 @@ protogen:
 		--proto_path=raft/service/proto raft/service/proto/raft_service.proto
 
 build: protogen
-	@go build
+	@go build -o bin/linux-amd64/
+
+buildrace: protogen
+	@go build -o bin/linux-amd64/ -race
