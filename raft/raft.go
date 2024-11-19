@@ -9,6 +9,8 @@ package raft
 
 import (
 	"fmt"
+	"github.com/gr455/omnipresence/raft/raftnet"
+	pb "github.com/gr455/omnipresence/raft/service/genproto"
 	raftstorage "github.com/gr455/omnipresence/raft/storage"
 	"github.com/gr455/omnipresence/raft/utils"
 	"math"
@@ -46,11 +48,6 @@ type CandidateMeta struct {
 	VoteGranted map[string]bool
 }
 
-type LogEntry struct {
-	Entry string
-	Term  int64
-}
-
 type RaftMutex struct {
 	// TODO: Have granular mutexes
 	GlobalDataMutex *sync.RWMutex
@@ -73,11 +70,11 @@ type RaftConsensusObject struct {
 	ElectionTimer *utils.Timer
 	// Timer ticks to zero as a leader, peer sends out a heartbeat
 	HeartbeatTimer *utils.Timer
-	Log            []LogEntry
+	Log            []pb.LogEntry
 	LogStartIdx    int64
 
 	Storage *raftstorage.RaftStorage
-	// Network *raftnet.RaftNetwork
+	Network *raftnet.RaftNetwork
 
 	RaftMutex
 	LeaderMeta
@@ -112,7 +109,7 @@ func (raft *RaftConsensusObject) Initialize(id string, storage *raftstorage.Raft
 	raft.LogStartIdx = startIdx
 
 	for _, logEntry := range log {
-		raft.Log = append(raft.Log, LogEntry(logEntry))
+		raft.Log = append(raft.Log, pb.LogEntry(logEntry))
 	}
 
 	fmt.Println(raft.Log, raft.LogStartIdx)
@@ -146,10 +143,10 @@ func (raft *RaftConsensusObject) RequestElection() {
 func (raft *RaftConsensusObject) RecvVoteRequest(candidateId string, candidatePrevLogTerm, candidatePrevLogIndex, candidateTerm, candidateLastCommitIndex int64) {
 	vote := raft.DecideVote(candidateId, candidatePrevLogTerm, candidatePrevLogIndex, candidateTerm, candidateLastCommitIndex)
 
-	raft.Network.ToPeer_Vote(vote)
+	raft.Network.ToPeer_Vote(candidateId, raft.PeerIdentifer, vote, raft.Term)
 }
 
-// Make self leader
+// Not an RPC action
 func (raft *RaftConsensusObject) WinElection() {
 	fmt.Printf("INFO: WinElection called by %v for term %v\n", raft.PeerIdentifer, raft.Term)
 	raft.ElectionTimer.Stop()
@@ -212,7 +209,7 @@ func (raft *RaftConsensusObject) DecideVote(candidateId string, candidatePrevLog
 
 // Note that prevLogIdx is the logIdx after which messages are being appended. Peer might have a higher value, that is fine
 // This higher value cannot have been committed though.
-func (raft *RaftConsensusObject) Append(msgs []LogEntry, leaderTerm, prevLogIdx, prevLogTerm, leaderCommit int64, leaderId string) {
+func (raft *RaftConsensusObject) Append(msgs []pb.LogEntry, leaderTerm, prevLogIdx, prevLogTerm, leaderCommit int64, leaderId string) {
 	if raft.PeerState != RAFT_PEER_STATE_FOLLOWER {
 		fmt.Printf("INFO: Demoted %v from %v to follower", raft.PeerIdentifer, raft.PeerState)
 		raft.PeerState = RAFT_PEER_STATE_FOLLOWER
@@ -241,7 +238,7 @@ func (raft *RaftConsensusObject) Append(msgs []LogEntry, leaderTerm, prevLogIdx,
 				raft.Log[prevLogIdx+1+int64(i)-raft.LogStartIdx].Term = newLog.Term
 				raft.Log[prevLogIdx+1+int64(i)-raft.LogStartIdx].Entry = newLog.Entry
 			} else {
-				raft.Log = append(raft.Log, LogEntry{Term: newLog.Term, Entry: newLog.Entry})
+				raft.Log = append(raft.Log, pb.LogEntry{Term: newLog.Term, Entry: newLog.Entry})
 			}
 		}
 
@@ -259,7 +256,7 @@ func (raft *RaftConsensusObject) Append(msgs []LogEntry, leaderTerm, prevLogIdx,
 	}
 
 	raft.GlobalDataMutex.Unlock()
-	raft.Network.ToLeader_AppendAck(leaderId, raft.Term, success, matchIndex)
+	raft.Network.ToLeader_AppendAck(leaderId, raft.PeerIdentifer, raft.Term, success, matchIndex)
 }
 
 // Deviation from paper: Also send matchIndex, to know replication status.
@@ -304,7 +301,7 @@ func (raft *RaftConsensusObject) SendAppends() {
 	var wg sync.WaitGroup
 
 	for _, peerId := range raft.AllPeers {
-		var msgs []LogEntry
+		var msgs []*pb.LogEntry
 		nextIndex := int64(0)
 		mapNextIdx, ok := raft.NextIndex[peerId]
 
@@ -313,12 +310,12 @@ func (raft *RaftConsensusObject) SendAppends() {
 		}
 
 		for i := int64(nextIndex - raft.LogStartIdx); i < int64(len(raft.Log)); i++ {
-			msgs = append(msgs, raft.Log[i])
+			msgs = append(msgs, &raft.Log[i])
 		}
 
 		wg.Add(1)
 		// TODO: Should release waitgroup
-		go raft.Network.ToPeer_Append(peerId, msgs, raft.Term, nextIndex-1, raft.Log[nextIndex-1].Term, raft.LastCommitIndex, raft.PeerIdentifer, wg)
+		go raft.Network.ToPeer_Append(peerId, msgs, raft.Term, nextIndex-1, raft.Log[nextIndex-1].Term, raft.LastCommitIndex, raft.PeerIdentifer, &wg)
 	}
 
 	wg.Wait()

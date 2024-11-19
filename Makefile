@@ -5,3 +5,6 @@ protogen:
 		--go_opt=paths=source_relative \
 		--go-grpc_opt=paths=source_relative\
 		--proto_path=raft/service/proto raft/service/proto/raft_service.proto
+
+build: protogen
+	@go build

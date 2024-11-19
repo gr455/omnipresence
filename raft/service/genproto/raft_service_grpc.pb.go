@@ -4,7 +4,7 @@
 // - protoc             v3.6.1
 // source: raft_service.proto
 
-package service
+package genproto
 
 import (
 	context "context"
@@ -19,215 +19,215 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	RaftService_RequestVote_FullMethodName   = "/raft.RaftService/RequestVote"
-	RaftService_Vote_FullMethodName          = "/raft.RaftService/Vote"
-	RaftService_AppendEntries_FullMethodName = "/raft.RaftService/AppendEntries"
-	RaftService_AckAppend_FullMethodName     = "/raft.RaftService/AckAppend"
+	Raft_RequestVote_FullMethodName   = "/raft.Raft/RequestVote"
+	Raft_Vote_FullMethodName          = "/raft.Raft/Vote"
+	Raft_AppendEntries_FullMethodName = "/raft.Raft/AppendEntries"
+	Raft_AckAppend_FullMethodName     = "/raft.Raft/AckAppend"
 )
 
-// RaftServiceClient is the client API for RaftService service.
+// RaftClient is the client API for Raft service.
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
-type RaftServiceClient interface {
+type RaftClient interface {
 	RequestVote(ctx context.Context, in *RequestVoteRequest, opts ...grpc.CallOption) (*RequestVoteResponse, error)
 	Vote(ctx context.Context, in *VoteRequest, opts ...grpc.CallOption) (*VoteResponse, error)
 	AppendEntries(ctx context.Context, in *AppendRequest, opts ...grpc.CallOption) (*AppendResponse, error)
 	AckAppend(ctx context.Context, in *AckAppendRequest, opts ...grpc.CallOption) (*AckAppendResponse, error)
 }
 
-type raftServiceClient struct {
+type raftClient struct {
 	cc grpc.ClientConnInterface
 }
 
-func NewRaftServiceClient(cc grpc.ClientConnInterface) RaftServiceClient {
-	return &raftServiceClient{cc}
+func NewRaftClient(cc grpc.ClientConnInterface) RaftClient {
+	return &raftClient{cc}
 }
 
-func (c *raftServiceClient) RequestVote(ctx context.Context, in *RequestVoteRequest, opts ...grpc.CallOption) (*RequestVoteResponse, error) {
+func (c *raftClient) RequestVote(ctx context.Context, in *RequestVoteRequest, opts ...grpc.CallOption) (*RequestVoteResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(RequestVoteResponse)
-	err := c.cc.Invoke(ctx, RaftService_RequestVote_FullMethodName, in, out, cOpts...)
+	err := c.cc.Invoke(ctx, Raft_RequestVote_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
 	return out, nil
 }
 
-func (c *raftServiceClient) Vote(ctx context.Context, in *VoteRequest, opts ...grpc.CallOption) (*VoteResponse, error) {
+func (c *raftClient) Vote(ctx context.Context, in *VoteRequest, opts ...grpc.CallOption) (*VoteResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(VoteResponse)
-	err := c.cc.Invoke(ctx, RaftService_Vote_FullMethodName, in, out, cOpts...)
+	err := c.cc.Invoke(ctx, Raft_Vote_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
 	return out, nil
 }
 
-func (c *raftServiceClient) AppendEntries(ctx context.Context, in *AppendRequest, opts ...grpc.CallOption) (*AppendResponse, error) {
+func (c *raftClient) AppendEntries(ctx context.Context, in *AppendRequest, opts ...grpc.CallOption) (*AppendResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(AppendResponse)
-	err := c.cc.Invoke(ctx, RaftService_AppendEntries_FullMethodName, in, out, cOpts...)
+	err := c.cc.Invoke(ctx, Raft_AppendEntries_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
 	return out, nil
 }
 
-func (c *raftServiceClient) AckAppend(ctx context.Context, in *AckAppendRequest, opts ...grpc.CallOption) (*AckAppendResponse, error) {
+func (c *raftClient) AckAppend(ctx context.Context, in *AckAppendRequest, opts ...grpc.CallOption) (*AckAppendResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(AckAppendResponse)
-	err := c.cc.Invoke(ctx, RaftService_AckAppend_FullMethodName, in, out, cOpts...)
+	err := c.cc.Invoke(ctx, Raft_AckAppend_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
 	return out, nil
 }
 
-// RaftServiceServer is the server API for RaftService service.
-// All implementations must embed UnimplementedRaftServiceServer
+// RaftServer is the server API for Raft service.
+// All implementations must embed UnimplementedRaftServer
 // for forward compatibility.
-type RaftServiceServer interface {
+type RaftServer interface {
 	RequestVote(context.Context, *RequestVoteRequest) (*RequestVoteResponse, error)
 	Vote(context.Context, *VoteRequest) (*VoteResponse, error)
 	AppendEntries(context.Context, *AppendRequest) (*AppendResponse, error)
 	AckAppend(context.Context, *AckAppendRequest) (*AckAppendResponse, error)
-	mustEmbedUnimplementedRaftServiceServer()
+	mustEmbedUnimplementedRaftServer()
 }
 
-// UnimplementedRaftServiceServer must be embedded to have
+// UnimplementedRaftServer must be embedded to have
 // forward compatible implementations.
 //
 // NOTE: this should be embedded by value instead of pointer to avoid a nil
 // pointer dereference when methods are called.
-type UnimplementedRaftServiceServer struct{}
+type UnimplementedRaftServer struct{}
 
-func (UnimplementedRaftServiceServer) RequestVote(context.Context, *RequestVoteRequest) (*RequestVoteResponse, error) {
+func (UnimplementedRaftServer) RequestVote(context.Context, *RequestVoteRequest) (*RequestVoteResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method RequestVote not implemented")
 }
-func (UnimplementedRaftServiceServer) Vote(context.Context, *VoteRequest) (*VoteResponse, error) {
+func (UnimplementedRaftServer) Vote(context.Context, *VoteRequest) (*VoteResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Vote not implemented")
 }
-func (UnimplementedRaftServiceServer) AppendEntries(context.Context, *AppendRequest) (*AppendResponse, error) {
+func (UnimplementedRaftServer) AppendEntries(context.Context, *AppendRequest) (*AppendResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method AppendEntries not implemented")
 }
-func (UnimplementedRaftServiceServer) AckAppend(context.Context, *AckAppendRequest) (*AckAppendResponse, error) {
+func (UnimplementedRaftServer) AckAppend(context.Context, *AckAppendRequest) (*AckAppendResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method AckAppend not implemented")
 }
-func (UnimplementedRaftServiceServer) mustEmbedUnimplementedRaftServiceServer() {}
-func (UnimplementedRaftServiceServer) testEmbeddedByValue()                     {}
+func (UnimplementedRaftServer) mustEmbedUnimplementedRaftServer() {}
+func (UnimplementedRaftServer) testEmbeddedByValue()              {}
 
-// UnsafeRaftServiceServer may be embedded to opt out of forward compatibility for this service.
-// Use of this interface is not recommended, as added methods to RaftServiceServer will
+// UnsafeRaftServer may be embedded to opt out of forward compatibility for this service.
+// Use of this interface is not recommended, as added methods to RaftServer will
 // result in compilation errors.
-type UnsafeRaftServiceServer interface {
-	mustEmbedUnimplementedRaftServiceServer()
+type UnsafeRaftServer interface {
+	mustEmbedUnimplementedRaftServer()
 }
 
-func RegisterRaftServiceServer(s grpc.ServiceRegistrar, srv RaftServiceServer) {
-	// If the following call pancis, it indicates UnimplementedRaftServiceServer was
+func RegisterRaftServer(s grpc.ServiceRegistrar, srv RaftServer) {
+	// If the following call pancis, it indicates UnimplementedRaftServer was
 	// embedded by pointer and is nil.  This will cause panics if an
 	// unimplemented method is ever invoked, so we test this at initialization
 	// time to prevent it from happening at runtime later due to I/O.
 	if t, ok := srv.(interface{ testEmbeddedByValue() }); ok {
 		t.testEmbeddedByValue()
 	}
-	s.RegisterService(&RaftService_ServiceDesc, srv)
+	s.RegisterService(&Raft_ServiceDesc, srv)
 }
 
-func _RaftService_RequestVote_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+func _Raft_RequestVote_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(RequestVoteRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(RaftServiceServer).RequestVote(ctx, in)
+		return srv.(RaftServer).RequestVote(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: RaftService_RequestVote_FullMethodName,
+		FullMethod: Raft_RequestVote_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(RaftServiceServer).RequestVote(ctx, req.(*RequestVoteRequest))
+		return srv.(RaftServer).RequestVote(ctx, req.(*RequestVoteRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
 
-func _RaftService_Vote_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+func _Raft_Vote_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(VoteRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(RaftServiceServer).Vote(ctx, in)
+		return srv.(RaftServer).Vote(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: RaftService_Vote_FullMethodName,
+		FullMethod: Raft_Vote_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(RaftServiceServer).Vote(ctx, req.(*VoteRequest))
+		return srv.(RaftServer).Vote(ctx, req.(*VoteRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
 
-func _RaftService_AppendEntries_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+func _Raft_AppendEntries_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(AppendRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(RaftServiceServer).AppendEntries(ctx, in)
+		return srv.(RaftServer).AppendEntries(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: RaftService_AppendEntries_FullMethodName,
+		FullMethod: Raft_AppendEntries_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(RaftServiceServer).AppendEntries(ctx, req.(*AppendRequest))
+		return srv.(RaftServer).AppendEntries(ctx, req.(*AppendRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
 
-func _RaftService_AckAppend_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+func _Raft_AckAppend_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(AckAppendRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(RaftServiceServer).AckAppend(ctx, in)
+		return srv.(RaftServer).AckAppend(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: RaftService_AckAppend_FullMethodName,
+		FullMethod: Raft_AckAppend_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(RaftServiceServer).AckAppend(ctx, req.(*AckAppendRequest))
+		return srv.(RaftServer).AckAppend(ctx, req.(*AckAppendRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
 
-// RaftService_ServiceDesc is the grpc.ServiceDesc for RaftService service.
+// Raft_ServiceDesc is the grpc.ServiceDesc for Raft service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
-var RaftService_ServiceDesc = grpc.ServiceDesc{
-	ServiceName: "raft.RaftService",
-	HandlerType: (*RaftServiceServer)(nil),
+var Raft_ServiceDesc = grpc.ServiceDesc{
+	ServiceName: "raft.Raft",
+	HandlerType: (*RaftServer)(nil),
 	Methods: []grpc.MethodDesc{
 		{
 			MethodName: "RequestVote",
-			Handler:    _RaftService_RequestVote_Handler,
+			Handler:    _Raft_RequestVote_Handler,
 		},
 		{
 			MethodName: "Vote",
-			Handler:    _RaftService_Vote_Handler,
+			Handler:    _Raft_Vote_Handler,
 		},
 		{
 			MethodName: "AppendEntries",
-			Handler:    _RaftService_AppendEntries_Handler,
+			Handler:    _Raft_AppendEntries_Handler,
 		},
 		{
 			MethodName: "AckAppend",
-			Handler:    _RaftService_AckAppend_Handler,
+			Handler:    _Raft_AckAppend_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

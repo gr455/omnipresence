@@ -3,6 +3,7 @@ package storage
 import (
 	"encoding/json"
 	"fmt"
+	pb "github.com/gr455/omnipresence/raft/service/genproto"
 	"io/ioutil"
 	"sync"
 )
@@ -20,13 +21,8 @@ type PersistentStorage struct {
 	CurrentTermVotedFor string `json:"current_term_voted_for"`
 }
 
-type RaftLog struct {
-	Entry string `json:"entry"`
-	Term  int64  `json:"term"`
-}
-
 type LogStorage struct {
-	Log []RaftLog `json:"log"`
+	Log []pb.LogEntry `json:"log"`
 	// Log is snapshotted till log_start_idx - 1
 	LogStartIdx int64 `json:"log_start_idx"`
 }
@@ -38,7 +34,7 @@ func NewRaftStorage(logfilePath, persistentMetaPath string) *RaftStorage {
 	}
 }
 
-func (storage *RaftStorage) ReadLog() ([]RaftLog, int64, error) {
+func (storage *RaftStorage) ReadLog() ([]pb.LogEntry, int64, error) {
 	var log LogStorage
 
 	logdata, err := ioutil.ReadFile(storage.LogfilePath)
@@ -85,9 +81,9 @@ func (storage *RaftStorage) WriteToLog(msg string, term, msgIdx int64) error {
 	}
 
 	if msgIdx < startIdx+int64(len(log)) {
-		log[msgIdx] = RaftLog{Entry: msg, Term: term}
+		log[msgIdx] = pb.LogEntry{Entry: msg, Term: term}
 	} else if msgIdx == startIdx+int64(len(log)) {
-		log = append(log, RaftLog{Entry: msg, Term: term})
+		log = append(log, pb.LogEntry{Entry: msg, Term: term})
 	}
 
 	logJson, err := json.Marshal(log)

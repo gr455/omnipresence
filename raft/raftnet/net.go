@@ -2,121 +2,139 @@
 package raftnet
 
 import (
+	"context"
+	"errors"
 	"fmt"
-	"net"
+	pb "github.com/gr455/omnipresence/raft/service/genproto"
+	"log"
 	"sync"
 	"time"
 )
 
 // RaftNetwork defines the interface for communicating with other Raft peers.
-type RaftNetwork interface {
-	Broadcast_RequestForVotes(candidateId string, term int64, lastLogIndex int64, lastLogTerm int64)
-	ToPeer_Vote(voteGranted bool)
-	Broadcast_NewLeader(leaderId string)
-	ToPeer_Append(peerId string, msgs []LogEntry, term int64, prevLogIndex int64, prevLogTerm int64, leaderCommit int64, leaderId string, wg *sync.WaitGroup)
-	ToLeader_AppendAck(leaderId string, term int64, success bool, matchIndex int64)
+type RaftNetwork struct {
+	PeerToPeerClient map[string]pb.RaftClient
+	mu               sync.Mutex
 }
 
-// LogEntry represents a log entry in the Raft log.
-type LogEntry struct {
-	Entry string
-	Term  int64
-}
-
-// RaftPeer defines the basic structure for a peer in the Raft network.
-type RaftPeer struct {
-	Id   string
-	Addr string
-}
-
-// RaftNetworkImpl is the implementation of the RaftNetwork interface.
-type RaftNetworkImpl struct {
-	peers map[string]*RaftPeer
-	mu    sync.Mutex
-}
-
-// NewRaftNetwork creates a new RaftNetworkImpl.
-func NewRaftNetwork() *RaftNetworkImpl {
-	return &RaftNetworkImpl{
-		peers: make(map[string]*RaftPeer),
+// NewRaftNetwork creates a new RaftNetwork.
+func NewRaftNetwork() *RaftNetwork {
+	return &RaftNetwork{
+		PeerToPeerClient: make(map[string]pb.RaftClient),
 	}
 }
 
-// RegisterPeer registers a new Raft peer in the network.
-func (rn *RaftNetworkImpl) RegisterPeer(id, addr string) {
+// RegisterPeer registers a new Raft peer in the network. Replaces peer client if it exists.
+func (rn *RaftNetwork) RegisterPeer(id string, client pb.RaftClient) {
 	rn.mu.Lock()
 	defer rn.mu.Unlock()
-	rn.peers[id] = &RaftPeer{
-		Id:   id,
-		Addr: addr,
-	}
+
+	rn.PeerToPeerClient[id] = client
 }
 
 // GetPeer returns the address of a peer by its ID.
-func (rn *RaftNetworkImpl) GetPeer(id string) (*RaftPeer, bool) {
+func (rn *RaftNetwork) GetPeerClient(id string) (pb.RaftClient, bool) {
 	rn.mu.Lock()
 	defer rn.mu.Unlock()
-	peer, exists := rn.peers[id]
+	peer, exists := rn.PeerToPeerClient[id]
 	return peer, exists
 }
 
 // Broadcast_RequestForVotes broadcasts a vote request to all peers in the network.
-func (rn *RaftNetworkImpl) Broadcast_RequestForVotes(candidateId string, term int64, lastLogIndex int64, lastLogTerm int64) {
+func (rn *RaftNetwork) Broadcast_RequestForVotes(candidateId string, term, lastLogIndex, lastLogTerm, lastCommit int64) error {
 	rn.mu.Lock()
 	defer rn.mu.Unlock()
-	for _, peer := range rn.peers {
+	for _, peer := range rn.PeerToPeerClient {
 		go rn.sendVoteRequest(peer, candidateId, term, lastLogIndex, lastLogTerm)
 	}
+	return nil
 }
 
 // sendVoteRequest sends a vote request to a single peer.
-func (rn *RaftNetworkImpl) sendVoteRequest(peer *RaftPeer, candidateId string, term int64, lastLogIndex int64, lastLogTerm int64) {
+func (rn *RaftNetwork) sendVoteRequest(peerClient pb.RaftClient, candidateId string, term int64, lastLogIndex int64, lastLogTerm int64) {
 	// Simulate network delay and request sending.
 	time.Sleep(time.Millisecond * 100)
-	fmt.Printf("Sending vote request from %s to %s: Term %d, Last Log: [%d, %d]\n", candidateId, peer.Id, term, lastLogIndex, lastLogTerm)
 	// Here you can call a real RPC, like gRPC, to send the request.
 }
 
 // ToPeer_Vote sends a vote decision (granted or not) to a specific peer.
-func (rn *RaftNetworkImpl) ToPeer_Vote(voteGranted bool) {
-	// Simulate sending vote response to peer
-	// This would normally be an RPC call to the candidate.
-	fmt.Printf("Vote granted: %v\n", voteGranted)
-}
-
-// Broadcast_NewLeader broadcasts a new leader announcement to all peers.
-func (rn *RaftNetworkImpl) Broadcast_NewLeader(leaderId string) {
-	rn.mu.Lock()
-	defer rn.mu.Unlock()
-	for _, peer := range rn.peers {
-		go rn.sendNewLeaderAnnouncement(peer, leaderId)
-	}
-}
-
-// sendNewLeaderAnnouncement sends a new leader announcement to a single peer.
-func (rn *RaftNetworkImpl) sendNewLeaderAnnouncement(peer *RaftPeer, leaderId string) {
-	// Simulate sending new leader notification.
-	time.Sleep(time.Millisecond * 100)
-	fmt.Printf("Announcing new leader: %s to peer %s\n", leaderId, peer.Id)
-	// Actual RPC code to notify the peer of the new leader would go here.
-}
-
-// ToPeer_Append sends an append RPC to a specific peer.
-func (rn *RaftNetworkImpl) ToPeer_Append(peerId string, msgs []LogEntry, term int64, prevLogIndex int64, prevLogTerm int64, leaderCommit int64, leaderId string, wg *sync.WaitGroup) {
-	defer wg.Done()
-	peer, exists := rn.GetPeer(peerId)
+func (rn *RaftNetwork) ToPeer_Vote(candidateId, voterId string, voteGranted bool, term int64) error {
+	candidateClient, exists := rn.GetPeerClient(candidateId)
 	if !exists {
-		fmt.Printf("Peer %s not found!\n", peerId)
-		return
+		return errors.New("Peer is unknown\n")
 	}
-	// Simulate sending append request to peer.
-	time.Sleep(time.Millisecond * 100)
-	fmt.Printf("Sending append request from leader %s to %s: Term %d, Prev Log: [%d, %d], Log Entries: %v\n", leaderId, peer.Id, term, prevLogIndex, prevLogTerm, msgs)
-	// Actual RPC code for sending log entries would go here.
+
+	voteRequest := &pb.VoteRequest{
+		PeerId:      voterId,
+		VoteGranted: voteGranted,
+		Term:        term,
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	_, err := candidateClient.Vote(ctx, voteRequest)
+	if err != nil {
+		return errors.New(fmt.Sprintf("Could not send vote request: %v\n", err))
+	}
+
+	log.Printf("Vote granted = %v for candidate %s\n", voteGranted, candidateId)
+	return nil
+}
+
+// ToPeer_Append sends an append RPC to a specific peer. Releases wg
+func (rn *RaftNetwork) ToPeer_Append(peerId string, msgs []*pb.LogEntry, term int64, prevLogIndex int64, prevLogTerm int64, leaderCommit int64, leaderId string, wg *sync.WaitGroup) error {
+	peerClient, exists := rn.GetPeerClient(peerId)
+	if !exists {
+		return errors.New("Peer is unknown\n")
+	}
+
+	appendRequest := &pb.AppendRequest{
+		LeaderId:     leaderId,
+		Term:         term,
+		PrevLogIndex: prevLogIndex,
+		PrevLogTerm:  prevLogTerm,
+		LeaderCommit: leaderCommit,
+		Entries:      msgs,
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	_, err := peerClient.AppendEntries(ctx, appendRequest)
+	if err != nil {
+		return errors.New(fmt.Sprintf("Could not send append request: %v\n", err))
+	}
+
+	log.Printf("Sent append to: %s", peerId)
+
+	wg.Done()
+	return nil
 }
 
 // ToLeader_AppendAck sends an append acknowledgment to the leader from a peer.
-func (rn *RaftNetworkImpl) ToLeader_AppendAck(leaderId string, term int64, success bool, matchIndex int64) {
-	// Simulate sending append acknowledgment.
-	fmt.Printf("Append ACK received by leader %s from peer: Success: %v, Match Index: %d\n", leaderId, success, matchIndex)
+func (rn *RaftNetwork) ToLeader_AppendAck(leaderId, peerId string, term int64, success bool, matchIndex int64) error {
+	peerClient, exists := rn.GetPeerClient(leaderId)
+	if !exists {
+		return errors.New("Peer is unknown\n")
+	}
+
+	ackAppendRequest := &pb.AckAppendRequest{
+		PeerId:     peerId,
+		Success:    success,
+		Term:       term,
+		MatchIndex: matchIndex,
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	_, err := peerClient.AckAppend(ctx, ackAppendRequest)
+	if err != nil {
+		return errors.New(fmt.Sprintf("Could not send append ack: %v\n", err))
+	}
+
+	log.Printf("Sent append ack to: %s", peerId)
+
+	return nil
 }

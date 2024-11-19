@@ -2,9 +2,9 @@ syntax = "proto3";
 
 package raft;
 
-option go_package = "github.com/gr455/omnipresence/raft/service";
+option go_package = "github.com/gr455/omnipresence/raft/service/genproto";
 
-service RaftService {
+service Raft {
 	rpc RequestVote (RequestVoteRequest) returns (RequestVoteResponse);
 	rpc Vote (VoteRequest) returns (VoteResponse);
 	rpc AppendEntries (AppendRequest) returns (AppendResponse);
@@ -42,7 +42,7 @@ message RequestVoteRequest {
 message RequestVoteResponse {}
 
 message VoteRequest {
-	int64 peer_id = 1;
+	string peer_id = 1;
     bool vote_granted = 2;
     int64 term = 3;
 }
