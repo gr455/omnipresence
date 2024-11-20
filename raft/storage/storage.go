@@ -22,7 +22,7 @@ type PersistentStorage struct {
 }
 
 type LogStorage struct {
-	Log []pb.LogEntry `json:"log"`
+	Log []*pb.LogEntry `json:"log"`
 	// Log is snapshotted till log_start_idx - 1
 	LogStartIdx int64 `json:"log_start_idx"`
 }
@@ -34,7 +34,7 @@ func NewRaftStorage(logfilePath, persistentMetaPath string) *RaftStorage {
 	}
 }
 
-func (storage *RaftStorage) ReadLog() ([]pb.LogEntry, int64, error) {
+func (storage *RaftStorage) ReadLog() ([]*pb.LogEntry, int64, error) {
 	var log LogStorage
 
 	logdata, err := ioutil.ReadFile(storage.LogfilePath)
@@ -81,9 +81,9 @@ func (storage *RaftStorage) WriteToLog(msg string, term, msgIdx int64) error {
 	}
 
 	if msgIdx < startIdx+int64(len(log)) {
-		log[msgIdx] = pb.LogEntry{Entry: msg, Term: term}
+		log[msgIdx] = &pb.LogEntry{Entry: msg, Term: term}
 	} else if msgIdx == startIdx+int64(len(log)) {
-		log = append(log, pb.LogEntry{Entry: msg, Term: term})
+		log = append(log, &pb.LogEntry{Entry: msg, Term: term})
 	}
 
 	logJson, err := json.Marshal(log)
