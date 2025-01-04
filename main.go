@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"github.com/gr455/omnipresence/raft/service"
 	pb "github.com/gr455/omnipresence/raft/service/genproto"
 	"google.golang.org/grpc"
@@ -12,10 +13,11 @@ import (
 func main() {
 	port, exists := os.LookupEnv("RAFT_PEER_PORT")
 	if !exists {
+		log.Printf("No port, defaulting...")
 		port = ":0"
 	}
 
-	listener, err := net.Listen("tcp", port)
+	listener, err := net.Listen("tcp", fmt.Sprintf("0.0.0.0:%s", port))
 	if err != nil {
 		log.Fatalf("Cannot create grpc listener: %s", err)
 	}

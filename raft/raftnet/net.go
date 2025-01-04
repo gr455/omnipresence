@@ -18,9 +18,9 @@ type RaftNetwork struct {
 }
 
 // NewRaftNetwork creates a new RaftNetwork.
-func NewRaftNetwork() *RaftNetwork {
+func NewRaftNetwork(peerToPeerClientMap map[string]pb.RaftClient) *RaftNetwork {
 	return &RaftNetwork{
-		PeerToPeerClient: make(map[string]pb.RaftClient),
+		PeerToPeerClient: peerToPeerClientMap,
 	}
 }
 
@@ -44,17 +44,33 @@ func (rn *RaftNetwork) GetPeerClient(id string) (pb.RaftClient, bool) {
 func (rn *RaftNetwork) Broadcast_RequestForVotes(candidateId string, term, lastLogIndex, lastLogTerm, lastCommit int64) error {
 	rn.mu.Lock()
 	defer rn.mu.Unlock()
-	for _, peer := range rn.PeerToPeerClient {
-		go rn.sendVoteRequest(peer, candidateId, term, lastLogIndex, lastLogTerm)
+	for peerId, peer := range rn.PeerToPeerClient {
+		if peerId == candidateId {
+			continue
+		}
+		go rn.sendVoteRequest(peer, candidateId, term, lastLogIndex, lastLogTerm, lastCommit)
 	}
 	return nil
 }
 
 // sendVoteRequest sends a vote request to a single peer.
-func (rn *RaftNetwork) sendVoteRequest(peerClient pb.RaftClient, candidateId string, term int64, lastLogIndex int64, lastLogTerm int64) {
-	// Simulate network delay and request sending.
-	time.Sleep(time.Millisecond * 100)
-	// Here you can call a real RPC, like gRPC, to send the request.
+func (rn *RaftNetwork) sendVoteRequest(peerClient pb.RaftClient, candidateId string, term, lastLogIndex, lastLogTerm, lastCommit int64) {
+	requestVoteRequest := &pb.RequestVoteRequest{
+		CandidateId:     candidateId,
+		Term:            term,
+		LastLogIndex:    lastLogIndex,
+		LastLogTerm:     lastLogTerm,
+		LastCommitIndex: lastCommit,
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	_, err := peerClient.RequestVote(ctx, requestVoteRequest)
+	if err != nil {
+		// Send error out via a channel to caller
+		log.Printf("Could not request vote from client: %v. Ignoring...", peerClient)
+	}
 }
 
 // ToPeer_Vote sends a vote decision (granted or not) to a specific peer.

@@ -5,14 +5,16 @@ import (
 	"fmt"
 	pb "github.com/gr455/omnipresence/raft/service/genproto"
 	"io/ioutil"
+	"log"
+	"os"
 	"sync"
 )
 
 type RaftStorage struct {
 	LogfilePath             string
 	PersistentMetaPath      string
-	LogFileWriteLock        *sync.Mutex
-	PersistentMetaWriteLock *sync.Mutex
+	LogFileWriteLock        sync.Mutex
+	PersistentMetaWriteLock sync.Mutex
 }
 
 type PersistentStorage struct {
@@ -28,9 +30,52 @@ type LogStorage struct {
 }
 
 func NewRaftStorage(logfilePath, persistentMetaPath string) *RaftStorage {
+	// Check that persistent storage files exist else create
+	_, err := os.Stat(logfilePath)
+	if os.IsNotExist(err) {
+		fmt.Printf("Log file does not exist, creating new...")
+		CreateDefaultLogFile(logfilePath)
+	}
+	_, err = os.Stat(persistentMetaPath)
+	if os.IsNotExist(err) {
+		fmt.Printf("Log file does not exist, creating new...")
+		CreateDefaultPersistentMeta(persistentMetaPath)
+	}
 	return &RaftStorage{
 		LogfilePath:        logfilePath,
 		PersistentMetaPath: persistentMetaPath,
+	}
+}
+
+func CreateDefaultLogFile(logfilePath string) {
+	file, err := os.Create(logfilePath)
+	if err != nil {
+		log.Fatalf("Err: Could not create log file")
+		return
+	}
+
+	defer file.Close()
+
+	_, err = file.WriteString("{\"log\": [], \"log_start_idx\": 0}")
+	if err != nil {
+		log.Fatalf("Error writing to file:", err)
+		return
+	}
+}
+
+func CreateDefaultPersistentMeta(persistentMetaPath string) {
+	file, err := os.Create(persistentMetaPath)
+	if err != nil {
+		log.Fatalf("Err: Could not create persistent metadata file")
+		return
+	}
+
+	defer file.Close()
+
+	_, err = file.WriteString("{\"current_term\": 0, \"current_term_voted_for\": \"\"}")
+	if err != nil {
+		log.Fatalf("Error writing to file:", err)
+		return
 	}
 }
 

@@ -50,7 +50,7 @@ type CandidateMeta struct {
 
 type RaftMutex struct {
 	// TODO: Have granular mutexes
-	GlobalDataMutex *sync.RWMutex
+	GlobalDataMutex sync.RWMutex
 }
 
 type RaftConsensusObject struct {
@@ -82,22 +82,23 @@ type RaftConsensusObject struct {
 	RaftPeerRuntimeConstants
 }
 
-func NewRaftConsensusObject(id string, storage *raftstorage.RaftStorage, pcount uint16, peers []string) (*RaftConsensusObject, error) {
+func NewRaftConsensusObject(id string, storage *raftstorage.RaftStorage, pcount uint16, peers []string, peerToPeerClientMap map[string]pb.RaftClient) (*RaftConsensusObject, error) {
 	r := &RaftConsensusObject{}
-	return r.Initialize(id, storage, pcount, peers)
+	return r.Initialize(id, storage, pcount, peers, peerToPeerClientMap)
 }
 
 // Initialize does not lock anything. Make sure that no callbacks start running before init completes.
-func (raft *RaftConsensusObject) Initialize(id string, storage *raftstorage.RaftStorage, pcount uint16, peers []string) (*RaftConsensusObject, error) {
-	raft.ElectionTimeoutMillis = uint16(rand.Intn(15_000)) + 5_000
+func (raft *RaftConsensusObject) Initialize(id string, storage *raftstorage.RaftStorage, pcount uint16, peers []string, peerToPeerClientMap map[string]pb.RaftClient) (*RaftConsensusObject, error) {
+	raft.ElectionTimeoutMillis = uint16(rand.Intn(10_000)) + 5_000
 	raft.HeartbeatTimeMillis = 2000
 	raft.PeerIdentifer = id
 	raft.PeerCount = pcount
 	raft.Storage = storage
 	raft.AllPeers = peers
-
+	raft.Network = raftnet.NewRaftNetwork(peerToPeerClientMap)
 	raft.ElectionTimer = utils.NewTimer(raft.ElectionTimeoutMillis, raft.RequestElection)
-	// raft.HeartbeatTimer = timer.NewTimer(time.HeartbeatTimeMillis, raft.SendAppends)
+	raft.HeartbeatTimer = utils.NewTimer(raft.HeartbeatTimeMillis, raft.SendAppends)
+	raft.PeerState = RAFT_PEER_STATE_FOLLOWER
 
 	// temp code for file loads
 	log, startIdx, err := raft.Storage.ReadLog()
@@ -114,6 +115,9 @@ func (raft *RaftConsensusObject) Initialize(id string, storage *raftstorage.Raft
 
 	fmt.Println(raft.Log, raft.LogStartIdx)
 	fmt.Printf("Initialized %v\n", id)
+
+	raft.ElectionTimer.Restart()
+	raft.HeartbeatTimer.Restart()
 
 	return raft, nil
 }
