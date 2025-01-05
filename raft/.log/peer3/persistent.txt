@@ -1,1 +1,1 @@
-{"current_term":13,"current_term_voted_for":""}
+{"current_term":3,"current_term_voted_for":""}

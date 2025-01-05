@@ -151,7 +151,7 @@ func (rn *RaftNetwork) ToLeader_AppendAck(leaderId, peerId string, term int64, s
 		return errors.New(fmt.Sprintf("Could not send append ack: %v\n", err))
 	}
 
-	log.Printf("Sent append ack to: %s", peerId)
+	log.Printf("Sent append ack to: %s", leaderId)
 
 	return nil
 }

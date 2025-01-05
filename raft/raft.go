@@ -117,7 +117,6 @@ func (raft *RaftConsensusObject) Initialize(id string, storage *raftstorage.Raft
 	fmt.Printf("Initialized %v\n", id)
 
 	raft.ElectionTimer.Restart()
-	raft.HeartbeatTimer.Restart()
 
 	return raft, nil
 }
@@ -145,6 +144,13 @@ func (raft *RaftConsensusObject) RequestElection() {
 
 // Recieve a request for vote, decide whether to vote
 func (raft *RaftConsensusObject) RecvVoteRequest(candidateId string, candidatePrevLogTerm, candidatePrevLogIndex, candidateTerm, candidateLastCommitIndex int64) {
+	fmt.Printf("INFO: RecvVoteRequest called on %v for term %v\n", raft.PeerIdentifer, raft.Term)
+	// If self term as a leader is smaller than a candidate's, step down.
+	if !raft.checkAndUpdateTerm(candidateTerm) {
+		raft.setPeerState(RAFT_PEER_STATE_FOLLOWER)
+		raft.HeartbeatTimer.Stop()
+	}
+
 	vote := raft.DecideVote(candidateId, candidatePrevLogTerm, candidatePrevLogIndex, candidateTerm, candidateLastCommitIndex)
 
 	raft.Network.ToPeer_Vote(candidateId, raft.PeerIdentifer, vote, raft.Term)
@@ -153,6 +159,7 @@ func (raft *RaftConsensusObject) RecvVoteRequest(candidateId string, candidatePr
 // Not an RPC action
 func (raft *RaftConsensusObject) WinElection() {
 	fmt.Printf("INFO: WinElection called by %v for term %v\n", raft.PeerIdentifer, raft.Term)
+	fmt.Printf("***\n\n\n %v IS NOW LEADER \n\n\n***", raft.PeerIdentifer)
 	raft.ElectionTimer.Stop()
 	raft.setPeerState(RAFT_PEER_STATE_LEADER)
 
@@ -319,7 +326,11 @@ func (raft *RaftConsensusObject) SendAppends() {
 
 		wg.Add(1)
 		// TODO: Should release waitgroup
-		go raft.Network.ToPeer_Append(peerId, msgs, raft.Term, nextIndex-1, raft.Log[nextIndex-1].Term, raft.LastCommitIndex, raft.PeerIdentifer, &wg)
+		prevLogTerm := raft.Term
+		if nextIndex > 0 {
+			prevLogTerm = raft.Log[nextIndex-1].Term
+		}
+		go raft.Network.ToPeer_Append(peerId, msgs, raft.Term, nextIndex-1, prevLogTerm, raft.LastCommitIndex, raft.PeerIdentifer, &wg)
 	}
 
 	wg.Wait()
