@@ -89,15 +89,15 @@ func NewRaftConsensusObject(id string, storage *raftstorage.RaftStorage, pcount 
 
 // Initialize does not lock anything. Make sure that no callbacks start running before init completes.
 func (raft *RaftConsensusObject) Initialize(id string, storage *raftstorage.RaftStorage, pcount uint16, peers []string, peerToPeerClientMap map[string]pb.RaftClient) (*RaftConsensusObject, error) {
-	raft.ElectionTimeoutMillis = uint16(rand.Intn(10_000)) + 5_000
-	raft.HeartbeatTimeMillis = 2000
+	raft.ElectionTimeoutMillis = uint16(rand.Intn(3_000)) + 5_000
+	raft.HeartbeatTimeMillis = 3000
 	raft.PeerIdentifer = id
 	raft.PeerCount = pcount
 	raft.Storage = storage
 	raft.AllPeers = peers
 	raft.Network = raftnet.NewRaftNetwork(peerToPeerClientMap)
-	raft.ElectionTimer = utils.NewTimer(raft.ElectionTimeoutMillis, raft.RequestElection)
 	raft.HeartbeatTimer = utils.NewTimer(raft.HeartbeatTimeMillis, raft.SendAppends)
+	raft.ElectionTimer = utils.NewTimer(raft.ElectionTimeoutMillis, raft.RequestElection)
 	raft.PeerState = RAFT_PEER_STATE_FOLLOWER
 
 	// temp code for file loads
@@ -113,10 +113,18 @@ func (raft *RaftConsensusObject) Initialize(id string, storage *raftstorage.Raft
 		raft.Log = append(raft.Log, logEntry)
 	}
 
+	raft.MatchIndex = make(map[string]int64)
+	raft.NextIndex = make(map[string]int64)
+	for _, peer := range peers {
+		raft.MatchIndex[peer] = 0
+		raft.NextIndex[peer] = 0
+	}
+
 	fmt.Println(raft.Log, raft.LogStartIdx)
 	fmt.Printf("Initialized %v\n", id)
 
-	raft.ElectionTimer.Restart()
+	raft.ElectionTimer.Enable()
+	raft.ElectionTimer.RestartIfEnabled()
 
 	return raft, nil
 }
@@ -125,8 +133,7 @@ func (raft *RaftConsensusObject) Initialize(id string, storage *raftstorage.Raft
 func (raft *RaftConsensusObject) RequestElection() {
 	fmt.Printf("INFO: RequestElection called on %v for term %v\n", raft.PeerIdentifer, raft.Term+1)
 	raft.setCurrentTerm(raft.Term + 1)
-	raft.setPeerState(RAFT_PEER_STATE_CANDIDATE)
-	raft.ElectionTimer.Restart() // Maybe re-requets election after another electiontimeout
+	raft.changePeerStateAndRetriggerTimers(RAFT_PEER_STATE_CANDIDATE)
 
 	raft.CurrentTermVotes = 1
 	raft.VoteGranted = make(map[string]bool)
@@ -145,10 +152,10 @@ func (raft *RaftConsensusObject) RequestElection() {
 // Recieve a request for vote, decide whether to vote
 func (raft *RaftConsensusObject) RecvVoteRequest(candidateId string, candidatePrevLogTerm, candidatePrevLogIndex, candidateTerm, candidateLastCommitIndex int64) {
 	fmt.Printf("INFO: RecvVoteRequest called on %v for term %v\n", raft.PeerIdentifer, raft.Term)
+	raft.ElectionTimer.RestartIfEnabled()
 	// If self term as a leader is smaller than a candidate's, step down.
 	if !raft.checkAndUpdateTerm(candidateTerm) {
-		raft.setPeerState(RAFT_PEER_STATE_FOLLOWER)
-		raft.HeartbeatTimer.Stop()
+		raft.changePeerStateAndRetriggerTimers(RAFT_PEER_STATE_FOLLOWER)
 	}
 
 	vote := raft.DecideVote(candidateId, candidatePrevLogTerm, candidatePrevLogIndex, candidateTerm, candidateLastCommitIndex)
@@ -160,10 +167,7 @@ func (raft *RaftConsensusObject) RecvVoteRequest(candidateId string, candidatePr
 func (raft *RaftConsensusObject) WinElection() {
 	fmt.Printf("INFO: WinElection called by %v for term %v\n", raft.PeerIdentifer, raft.Term)
 	fmt.Printf("***\n\n\n %v IS NOW LEADER \n\n\n***", raft.PeerIdentifer)
-	raft.ElectionTimer.Stop()
-	raft.setPeerState(RAFT_PEER_STATE_LEADER)
-
-	raft.HeartbeatTimer.Restart()
+	raft.changePeerStateAndRetriggerTimers(RAFT_PEER_STATE_LEADER)
 }
 
 // Recv a vote, increment currentTermVotes, and win election if majority
@@ -223,9 +227,10 @@ func (raft *RaftConsensusObject) DecideVote(candidateId string, candidatePrevLog
 func (raft *RaftConsensusObject) Append(msgs []*pb.LogEntry, leaderTerm, prevLogIdx, prevLogTerm, leaderCommit int64, leaderId string) {
 	if raft.PeerState != RAFT_PEER_STATE_FOLLOWER {
 		fmt.Printf("INFO: Demoted %v from %v to follower", raft.PeerIdentifer, raft.PeerState)
-		raft.PeerState = RAFT_PEER_STATE_FOLLOWER
+		raft.changePeerStateAndRetriggerTimers(RAFT_PEER_STATE_FOLLOWER)
 	}
 
+	raft.ElectionTimer.RestartIfEnabled()
 	raft.GlobalDataMutex.Lock()
 
 	fmt.Printf("INFO: Append called by %v, for term %v\n", raft.PeerIdentifer, raft.Term)
@@ -278,8 +283,7 @@ func (raft *RaftConsensusObject) RecvAppendAck(peerId string, peerTerm, matchInd
 
 	// If self term as a leader is smaller than a peer's, step down.
 	if !raft.checkAndUpdateTerm(peerTerm) {
-		raft.setPeerState(RAFT_PEER_STATE_FOLLOWER)
-		raft.HeartbeatTimer.Stop()
+		raft.changePeerStateAndRetriggerTimers(RAFT_PEER_STATE_FOLLOWER)
 		return
 	}
 
@@ -335,6 +339,8 @@ func (raft *RaftConsensusObject) SendAppends() {
 
 	wg.Wait()
 	fmt.Printf("INFO: Done sending appends\n")
+	// Restart heartbeat timer
+	raft.HeartbeatTimer.RestartIfEnabled()
 }
 
 // NOT TOP LEVEL, DO NOT USE GLOBAL MUTEX
@@ -400,6 +406,25 @@ func (raft *RaftConsensusObject) setCurrentTermVotedFor(peerId string) {
 	go raft.Storage.WritePersistent(raft.Term, raft.TermVotePeerId)
 }
 
-func (raft *RaftConsensusObject) setPeerState(state RaftPeerState) {
+func (raft *RaftConsensusObject) changePeerStateAndRetriggerTimers(state RaftPeerState) {
+	if state == raft.PeerState {
+		return
+	}
+
 	raft.PeerState = state
+
+	if state == RAFT_PEER_STATE_LEADER {
+		raft.HeartbeatTimer.Enable()
+		raft.ElectionTimer.Disable()
+
+		raft.HeartbeatTimer.RestartIfEnabled()
+	}
+
+	if state == RAFT_PEER_STATE_FOLLOWER || state == RAFT_PEER_STATE_CANDIDATE {
+		raft.HeartbeatTimer.Disable()
+		raft.ElectionTimer.Enable()
+
+		raft.ElectionTimer.RestartIfEnabled()
+	}
+
 }
