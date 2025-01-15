@@ -2,20 +2,18 @@ package utils
 
 import (
 	"log"
-	"sync"
 	"time"
 )
 
 type Timer struct {
-	Interval              time.Duration
-	Timer                 *time.Timer
-	Enabled               bool
-	Callback              func()
-	CancelChannel         chan struct{}
-	RoutineListeningMutex sync.Mutex
+	Interval time.Duration
+	Ticker   *time.Ticker
+	Enabled  bool
+	Callback func()
+	Debug    bool
 }
 
-func NewTimer(intervalMillis uint16, callback func()) *Timer {
+func NewTimer(intervalMillis uint16, callback func(), debug bool) *Timer {
 	timer := &Timer{}
 	return timer.Initialize(intervalMillis, callback)
 }
@@ -23,10 +21,16 @@ func NewTimer(intervalMillis uint16, callback func()) *Timer {
 func (timer *Timer) Initialize(intervalMillis uint16, callback func()) *Timer {
 	timer.Interval = time.Duration(intervalMillis) * time.Millisecond
 	timer.Callback = callback
-	timer.CancelChannel = make(chan struct{}, 0)
-	timer.Timer = time.NewTimer(timer.Interval)
-	timer.Timer.Stop()
+	timer.Ticker = time.NewTicker(timer.Interval)
+	timer.Ticker.Stop()
 	timer.Enabled = false
+
+	go func() {
+		for range timer.Ticker.C {
+			timer.debug("TICK")
+			timer.Callback()
+		}
+	}()
 
 	return timer
 }
@@ -35,45 +39,29 @@ func (timer *Timer) RestartIfEnabled() bool {
 	if !timer.Enabled {
 		return false
 	}
-	if unlocked := timer.RoutineListeningMutex.TryLock(); !unlocked {
-		timer.CancelChannel <- struct{}{}
-	} else {
-		timer.RoutineListeningMutex.Unlock()
-	}
 
-	timer.Stop()
-	timer.Timer.Reset(timer.Interval)
+	timer.debug("RESTARTED")
 
-	go func() {
-		// timer.RoutineListeningMutex.Lock()
-		// defer timer.RoutineListeningMutex.Unlock()
-		select {
-		case <-timer.Timer.C:
-			log.Printf("TIMER: %v", timer.Interval)
-			timer.Callback()
-		case <-timer.CancelChannel:
-			break
-
-		}
-	}()
-
+	timer.Ticker.Stop()
+	timer.Ticker.Reset(timer.Interval)
 	return true
 }
 
 func (timer *Timer) Stop() {
-	timer.Timer.Stop()
-	// flush channel in case timer had written to it without goroutine consuming.
-	select {
-	case <-timer.Timer.C:
-	default:
-	}
+	timer.Ticker.Stop()
 }
 
-func (timer *Timer) Disable() {
+func (timer *Timer) StopAndDisable() {
 	timer.Stop()
 	timer.Enabled = false
 }
 
 func (timer *Timer) Enable() {
 	timer.Enabled = true
+}
+
+func (timer *Timer) debug(msg string) {
+	if timer.Debug {
+		log.Printf("\n\n\n\n %s\n\n\n", msg)
+	}
 }

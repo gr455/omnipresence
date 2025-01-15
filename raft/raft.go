@@ -96,8 +96,8 @@ func (raft *RaftConsensusObject) Initialize(id string, storage *raftstorage.Raft
 	raft.Storage = storage
 	raft.AllPeers = peers
 	raft.Network = raftnet.NewRaftNetwork(peerToPeerClientMap)
-	raft.HeartbeatTimer = utils.NewTimer(raft.HeartbeatTimeMillis, raft.SendAppends)
-	raft.ElectionTimer = utils.NewTimer(raft.ElectionTimeoutMillis, raft.RequestElection)
+	raft.HeartbeatTimer = utils.NewTimer(raft.HeartbeatTimeMillis, raft.SendAppends /* debug= */, true)
+	raft.ElectionTimer = utils.NewTimer(raft.ElectionTimeoutMillis, raft.RequestElection /* debug= */, false)
 	raft.PeerState = RAFT_PEER_STATE_FOLLOWER
 
 	// temp code for file loads
@@ -225,7 +225,7 @@ func (raft *RaftConsensusObject) DecideVote(candidateId string, candidatePrevLog
 // Note that prevLogIdx is the logIdx after which messages are being appended. Peer might have a higher value, that is fine
 // This higher value cannot have been committed though.
 func (raft *RaftConsensusObject) Append(msgs []*pb.LogEntry, leaderTerm, prevLogIdx, prevLogTerm, leaderCommit int64, leaderId string) {
-	if raft.PeerState != RAFT_PEER_STATE_FOLLOWER {
+	if raft.PeerState != RAFT_PEER_STATE_FOLLOWER && leaderId != raft.PeerIdentifer {
 		fmt.Printf("INFO: Demoted %v from %v to follower", raft.PeerIdentifer, raft.PeerState)
 		raft.changePeerStateAndRetriggerTimers(RAFT_PEER_STATE_FOLLOWER)
 	}
@@ -337,10 +337,8 @@ func (raft *RaftConsensusObject) SendAppends() {
 		go raft.Network.ToPeer_Append(peerId, msgs, raft.Term, nextIndex-1, prevLogTerm, raft.LastCommitIndex, raft.PeerIdentifer, &wg)
 	}
 
-	wg.Wait()
+	// wg.Wait()
 	fmt.Printf("INFO: Done sending appends\n")
-	// Restart heartbeat timer
-	raft.HeartbeatTimer.RestartIfEnabled()
 }
 
 // NOT TOP LEVEL, DO NOT USE GLOBAL MUTEX
@@ -415,13 +413,13 @@ func (raft *RaftConsensusObject) changePeerStateAndRetriggerTimers(state RaftPee
 
 	if state == RAFT_PEER_STATE_LEADER {
 		raft.HeartbeatTimer.Enable()
-		raft.ElectionTimer.Disable()
+		raft.ElectionTimer.StopAndDisable()
 
 		raft.HeartbeatTimer.RestartIfEnabled()
 	}
 
 	if state == RAFT_PEER_STATE_FOLLOWER || state == RAFT_PEER_STATE_CANDIDATE {
-		raft.HeartbeatTimer.Disable()
+		raft.HeartbeatTimer.StopAndDisable()
 		raft.ElectionTimer.Enable()
 
 		raft.ElectionTimer.RestartIfEnabled()
