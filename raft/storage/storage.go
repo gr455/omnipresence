@@ -129,9 +129,11 @@ func (storage *RaftStorage) WriteToLog(msg string, term, msgIdx int64) error {
 		log[msgIdx] = &pb.LogEntry{Entry: msg, Term: term}
 	} else if msgIdx == startIdx+int64(len(log)) {
 		log = append(log, &pb.LogEntry{Entry: msg, Term: term})
+	} else {
+		fmt.Printf("Err: Asked to write beyond current log size (asked %v, last %v)", msgIdx, startIdx+int64(len(log))-1)
 	}
 
-	logJson, err := json.Marshal(log)
+	logJson, err := json.Marshal(LogStorage{Log: log, LogStartIdx: startIdx})
 	if err != nil {
 		fmt.Printf("Err: Error marshaling log: %v\n", err)
 		return err

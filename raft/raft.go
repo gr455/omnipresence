@@ -107,7 +107,16 @@ func (raft *RaftConsensusObject) Initialize(id string, storage *raftstorage.Raft
 		return nil, err
 	}
 
+	// temp code for file loads
+	pers, err := raft.Storage.ReadPersistent()
+	if err != nil {
+		fmt.Printf("Fatal: Error reading pers - %v\n", err)
+		return nil, err
+	}
+
 	raft.LogStartIdx = startIdx
+	raft.Term = pers.CurrentTerm
+	raft.TermVotePeerId = pers.CurrentTermVotedFor
 
 	for _, logEntry := range log {
 		raft.Log = append(raft.Log, logEntry)
@@ -151,7 +160,7 @@ func (raft *RaftConsensusObject) RequestElection() {
 
 // Recieve a request for vote, decide whether to vote
 func (raft *RaftConsensusObject) RecvVoteRequest(candidateId string, candidatePrevLogTerm, candidatePrevLogIndex, candidateTerm, candidateLastCommitIndex int64) {
-	fmt.Printf("INFO: RecvVoteRequest called on %v for term %v\n", raft.PeerIdentifer, raft.Term)
+	fmt.Printf("INFO: RecvVoteRequest called on %v, candidate: %v for term %v\n", raft.PeerIdentifer, candidateId, raft.Term)
 	raft.ElectionTimer.RestartIfEnabled()
 	// If self term as a leader is smaller than a candidate's, step down.
 	if !raft.checkAndUpdateTerm(candidateTerm) {
@@ -189,6 +198,8 @@ func (raft *RaftConsensusObject) RecvVote(peerId string, granted bool, term int6
 
 	if raft.CurrentTermVotes > uint16(math.Ceil(float64(raft.PeerCount)/2.0)) {
 		raft.WinElection()
+	} else {
+		fmt.Printf("INFO: not enough votes yet: %v for term %v\n", raft.CurrentTermVotes, raft.Term)
 	}
 }
 
@@ -207,6 +218,7 @@ func (raft *RaftConsensusObject) DecideVote(candidateId string, candidatePrevLog
 	raft.GlobalDataMutex.RLock()
 	if raft.LogStartIdx+int64(len(raft.Log)) > candidatePrevLogIndex+1 ||
 		(raft.LogStartIdx+int64(len(raft.Log)) != 0 && raft.Log[len(raft.Log)-1].Term > candidatePrevLogTerm) {
+		raft.GlobalDataMutex.RUnlock()
 		return false
 	}
 	raft.GlobalDataMutex.RUnlock()
@@ -225,6 +237,14 @@ func (raft *RaftConsensusObject) DecideVote(candidateId string, candidatePrevLog
 // Note that prevLogIdx is the logIdx after which messages are being appended. Peer might have a higher value, that is fine
 // This higher value cannot have been committed though.
 func (raft *RaftConsensusObject) Append(msgs []*pb.LogEntry, leaderTerm, prevLogIdx, prevLogTerm, leaderCommit int64, leaderId string) {
+	fmt.Printf("INFO: Append called on %v, for term %v\n", raft.PeerIdentifer, raft.Term)
+
+	// If I would not vote this peer to be the leader, I will not listen to it.
+	if !raft.DecideVote(leaderId, prevLogTerm, prevLogIdx, leaderTerm, leaderCommit) && leaderId != raft.PeerIdentifer {
+		fmt.Printf("INFO: Refusing leader's append. I am better")
+		return
+	}
+
 	if raft.PeerState != RAFT_PEER_STATE_FOLLOWER && leaderId != raft.PeerIdentifer {
 		fmt.Printf("INFO: Demoted %v from %v to follower", raft.PeerIdentifer, raft.PeerState)
 		raft.changePeerStateAndRetriggerTimers(RAFT_PEER_STATE_FOLLOWER)
@@ -232,8 +252,6 @@ func (raft *RaftConsensusObject) Append(msgs []*pb.LogEntry, leaderTerm, prevLog
 
 	raft.ElectionTimer.RestartIfEnabled()
 	raft.GlobalDataMutex.Lock()
-
-	fmt.Printf("INFO: Append called by %v, for term %v\n", raft.PeerIdentifer, raft.Term)
 	success := true
 
 	_ = raft.checkAndUpdateTerm(leaderTerm)
@@ -269,6 +287,8 @@ func (raft *RaftConsensusObject) Append(msgs []*pb.LogEntry, leaderTerm, prevLog
 		if raft.LastCommitIndex < leaderCommit {
 			raft.Commit(leaderCommit, leaderTerm)
 		}
+
+		fmt.Printf("\nINFO: Peer committed till: %v\n", raft.LastCommitIndex)
 	}
 
 	raft.GlobalDataMutex.Unlock()
@@ -294,6 +314,7 @@ func (raft *RaftConsensusObject) RecvAppendAck(peerId string, peerTerm, matchInd
 	raft.MatchIndex[peerId] = matchIndex
 	if !success {
 		raft.NextIndex[peerId]--
+		raft.GlobalDataMutex.Unlock()
 		return
 	}
 
@@ -305,6 +326,8 @@ func (raft *RaftConsensusObject) RecvAppendAck(peerId string, peerTerm, matchInd
 	maxMatch := raft.getMaximumMatch()
 	raft.GlobalDataMutex.RUnlock()
 	raft.Commit(maxMatch, raft.Term)
+
+	fmt.Printf("\nINFO: Leader committed till: %v\n", raft.LastCommitIndex)
 }
 
 // Send append RPCs to all peers
@@ -337,7 +360,7 @@ func (raft *RaftConsensusObject) SendAppends() {
 		go raft.Network.ToPeer_Append(peerId, msgs, raft.Term, nextIndex-1, prevLogTerm, raft.LastCommitIndex, raft.PeerIdentifer, &wg)
 	}
 
-	// wg.Wait()
+	wg.Wait()
 	fmt.Printf("INFO: Done sending appends\n")
 }
 
@@ -408,6 +431,7 @@ func (raft *RaftConsensusObject) changePeerStateAndRetriggerTimers(state RaftPee
 	if state == raft.PeerState {
 		return
 	}
+	fmt.Printf("INFO: Changing state to: %v", state)
 
 	raft.PeerState = state
 
