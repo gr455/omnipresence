@@ -51,6 +51,7 @@ type CandidateMeta struct {
 type RaftMutex struct {
 	// TODO: Have granular mutexes
 	GlobalDataMutex sync.RWMutex
+	LocalizedMutex  sync.Mutex
 }
 
 type RaftConsensusObject struct {
@@ -122,6 +123,8 @@ func (raft *RaftConsensusObject) Initialize(id string, storage *raftstorage.Raft
 		raft.Log = append(raft.Log, logEntry)
 	}
 
+	raft.LastCommitIndex = raft.LogStartIdx + int64(len(raft.Log)) - 1
+
 	raft.MatchIndex = make(map[string]int64)
 	raft.NextIndex = make(map[string]int64)
 	for _, peer := range peers {
@@ -141,7 +144,7 @@ func (raft *RaftConsensusObject) Initialize(id string, storage *raftstorage.Raft
 // Send out broadcast requests to all the peers asking them to vote this peer.
 func (raft *RaftConsensusObject) RequestElection() {
 	fmt.Printf("INFO: RequestElection called on %v for term %v\n", raft.PeerIdentifer, raft.Term+1)
-	raft.setCurrentTerm(raft.Term + 1)
+	raft.changeCurrentTerm(raft.Term + 1)
 	raft.changePeerStateAndRetriggerTimers(RAFT_PEER_STATE_CANDIDATE)
 
 	raft.CurrentTermVotes = 1
@@ -367,6 +370,9 @@ func (raft *RaftConsensusObject) SendAppends() {
 // NOT TOP LEVEL, DO NOT USE GLOBAL MUTEX
 // Write the current state of the log to disk. Not an RPC action, called from Append.
 func (raft *RaftConsensusObject) Commit(tillIdx, term int64) {
+	raft.LocalizedMutex.Lock()
+	defer raft.LocalizedMutex.Unlock()
+
 	for raft.LastCommitIndex < tillIdx {
 		// Don't attempt to commit past your own log.
 		if raft.LastCommitIndex > int64(len(raft.Log))+raft.LogStartIdx-1 {
@@ -405,20 +411,30 @@ func (raft *RaftConsensusObject) getMaximumMatch() int64 {
 }
 
 // Check if incoming request has a greater term. If so, update current term.
-// Also update curr term voted for peerid.
 // Returns whether the term was up to date to begin with.
 func (raft *RaftConsensusObject) checkAndUpdateTerm(peerTerm int64) bool {
 	if peerTerm > raft.Term {
-		raft.setCurrentTerm(peerTerm)
-		raft.setCurrentTermVotedFor("")
+		raft.changeCurrentTerm(peerTerm)
 		return false
 	}
 
 	return true
 }
 
-func (raft *RaftConsensusObject) setCurrentTerm(term int64) {
+func (raft *RaftConsensusObject) changeCurrentTerm(term int64) {
+	if raft.Term == term {
+		return
+	}
+
+	if term < raft.Term {
+		panic("fatal: Asked to decrement term")
+	}
+
 	raft.Term = term
+	raft.VoteGranted = make(map[string]bool)
+	raft.CurrentTermVotes = 0
+	raft.setCurrentTermVotedFor("")
+
 	go raft.Storage.WritePersistent(raft.Term, raft.TermVotePeerId)
 }
 

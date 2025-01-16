@@ -1,1 +1,1 @@
-{"log":[{"entry":"log1"},{"entry":"log2","term":38}],"log_start_idx":0}
+{"log":[{"entry":"log1","term":1},{"entry":"log2","term":44},{"entry":"log2","term":44}],"log_start_idx":0}
