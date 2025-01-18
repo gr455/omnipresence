@@ -1,7 +1,7 @@
 /**
  * This is an implementation of the Raft consensus algorithm.
  *
- * This implementation follows the design as outlined in the paper:
+ * This implementation follows the design from the paper:
  * "In Search of an Understandable Consensus Algorithm" (https://raft.github.io/raft.pdf).
  */
 
@@ -170,7 +170,7 @@ func (raft *RaftConsensusObject) RecvVoteRequest(candidateId string, candidatePr
 		raft.changePeerStateAndRetriggerTimers(RAFT_PEER_STATE_FOLLOWER)
 	}
 
-	vote := raft.DecideVote(candidateId, candidatePrevLogTerm, candidatePrevLogIndex, candidateTerm, candidateLastCommitIndex)
+	vote := raft.decideVote(candidateId, candidatePrevLogTerm, candidatePrevLogIndex, candidateTerm, candidateLastCommitIndex)
 
 	if vote {
 		raft.TermVotePeerId = candidateId
@@ -178,13 +178,6 @@ func (raft *RaftConsensusObject) RecvVoteRequest(candidateId string, candidatePr
 	}
 
 	raft.Network.ToPeer_Vote(candidateId, raft.PeerIdentifer, vote, raft.Term)
-}
-
-// Not an RPC action
-func (raft *RaftConsensusObject) WinElection() {
-	fmt.Printf("INFO: WinElection called by %v for term %v\n", raft.PeerIdentifer, raft.Term)
-	fmt.Printf("***\n\n\n %v IS NOW LEADER \n\n\n***", raft.PeerIdentifer)
-	raft.changePeerStateAndRetriggerTimers(RAFT_PEER_STATE_LEADER)
 }
 
 // Recv a vote, increment currentTermVotes, and win election if majority
@@ -205,45 +198,10 @@ func (raft *RaftConsensusObject) RecvVote(peerId string, granted bool, term int6
 	raft.GlobalDataMutex.Unlock()
 
 	if raft.CurrentTermVotes > uint16(math.Ceil(float64(raft.PeerCount)/2.0)) {
-		raft.WinElection()
+		raft.winElection()
 	} else {
 		fmt.Printf("INFO: not enough votes yet: %v for term %v\n", raft.CurrentTermVotes, raft.Term)
 	}
-}
-
-// ANY Rpc () that you get, you must check if the term of that sender is greater than self, then immediately update your term
-// If the sending peer is candidate, you must update your term and vote yes to the candidate
-// If you are a candidate, you must immedately demote to follower if this happens.
-
-// Decide if current peer should vote true or false to a vote request by another peer. Only returns vote decision.
-func (raft *RaftConsensusObject) DecideVote(candidateId string, candidatePrevLogTerm, candidatePrevLogIndex, candidateTerm, candidateLastCommitIndex int64) bool {
-	// check if you have already voted someone else this term.
-	if raft.TermVotePeerId != "" && raft.TermVotePeerId != candidateId {
-		fmt.Printf("False vote for %v because already voted %v\n", candidateId, raft.TermVotePeerId)
-		return false
-	}
-
-	if raft.Term > candidateTerm {
-		fmt.Printf("False vote for %v due to lower term\n", candidateId)
-		return false
-	}
-
-	// vote false if either voter has more logs, or voter's last log term is higher than candidate's.
-	raft.GlobalDataMutex.RLock()
-	if raft.LogStartIdx+int64(len(raft.Log)) > candidatePrevLogIndex+1 ||
-		(raft.LogStartIdx+int64(len(raft.Log)) != 0 && raft.Log[len(raft.Log)-1].Term > candidatePrevLogTerm) {
-		raft.GlobalDataMutex.RUnlock()
-		fmt.Printf("False vote for %v due to lesser logs, or lower term last log. Candidate Last log: %v\n", candidateId, candidatePrevLogIndex)
-		return false
-	}
-	raft.GlobalDataMutex.RUnlock()
-	// Vote false if peer's commit index is higher than candidate's.
-	if raft.LastCommitIndex > candidateLastCommitIndex {
-		fmt.Printf("False vote for %v due to lower commit\n", candidateId)
-		return false
-	}
-
-	return true
 }
 
 // Check append conditions and append msgs[] starting at prevLogIdx + 1. Also ack the leader once appended
@@ -406,6 +364,64 @@ func (raft *RaftConsensusObject) Commit(tillIdx int64) {
 		raft.LastCommitIndex++
 	}
 
+}
+
+func (raft *RaftConsensusObject) AppendLeaderLogForCurrentTerm(msg string) (bool, bool) {
+	isLeader := raft.CheckLeadership()
+	if !isLeader {
+		return /*isLeader=*/ false /*ok=*/, true
+	}
+
+	raft.GlobalDataMutex.Lock()
+	defer raft.GlobalDataMutex.Unlock()
+
+	raft.Log = append(raft.Log, &pb.LogEntry{Term: raft.Term, Entry: msg})
+	return /*isLeader=*/ true /*ok=*/, true
+}
+
+func (raft *RaftConsensusObject) CheckLeadership() bool {
+	return raft.PeerState == RAFT_PEER_STATE_LEADER
+}
+
+// ANY Rpc () that you get, you must check if the term of that sender is greater than self, then immediately update your term
+// If the sending peer is candidate, you must update your term and vote yes to the candidate
+// If you are a candidate, you must immedately demote to follower if this happens.
+
+// Decide if current peer should vote true or false to a vote request by another peer. Only returns vote decision.
+func (raft *RaftConsensusObject) decideVote(candidateId string, candidatePrevLogTerm, candidatePrevLogIndex, candidateTerm, candidateLastCommitIndex int64) bool {
+	// check if you have already voted someone else this term.
+	if raft.TermVotePeerId != "" && raft.TermVotePeerId != candidateId {
+		fmt.Printf("False vote for %v because already voted %v\n", candidateId, raft.TermVotePeerId)
+		return false
+	}
+
+	if raft.Term > candidateTerm {
+		fmt.Printf("False vote for %v due to lower term\n", candidateId)
+		return false
+	}
+
+	// vote false if either voter has more logs, or voter's last log term is higher than candidate's.
+	raft.GlobalDataMutex.RLock()
+	if raft.LogStartIdx+int64(len(raft.Log)) > candidatePrevLogIndex+1 ||
+		(raft.LogStartIdx+int64(len(raft.Log)) != 0 && raft.Log[len(raft.Log)-1].Term > candidatePrevLogTerm) {
+		raft.GlobalDataMutex.RUnlock()
+		fmt.Printf("False vote for %v due to lesser logs, or lower term last log. Candidate Last log: %v\n", candidateId, candidatePrevLogIndex)
+		return false
+	}
+	raft.GlobalDataMutex.RUnlock()
+	// Vote false if peer's commit index is higher than candidate's.
+	if raft.LastCommitIndex > candidateLastCommitIndex {
+		fmt.Printf("False vote for %v due to lower commit\n", candidateId)
+		return false
+	}
+
+	return true
+}
+
+func (raft *RaftConsensusObject) winElection() {
+	fmt.Printf("INFO: WinElection called by %v for term %v\n", raft.PeerIdentifer, raft.Term)
+	fmt.Printf("***\n\n\n %v IS NOW LEADER \n\n\n***", raft.PeerIdentifer)
+	raft.changePeerStateAndRetriggerTimers(RAFT_PEER_STATE_LEADER)
 }
 
 // Returns the maximum index of log which atleast the majority peers have replicated

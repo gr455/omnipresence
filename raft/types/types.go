@@ -10,4 +10,6 @@ type RaftInterface interface {
 	RecvVote(peerId string, granted bool, term int64)
 	Append(msgs []*pb.LogEntry, leaderTerm, prevLogIdx, prevLogTerm, leaderCommit int64, leaderId string)
 	RecvAppendAck(peerId string, peerTerm, matchIndex int64, success bool)
+	AppendLeaderLogForCurrentTerm(msg string) (bool, bool)
+	CheckLeadership() bool
 }

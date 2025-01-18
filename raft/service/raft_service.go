@@ -77,3 +77,11 @@ func (s *RaftServer) AckAppend(ctx context.Context, request *pb.AckAppendRequest
 	go s.raft.RecvAppendAck(request.PeerId, request.Term, request.MatchIndex, request.Success)
 	return &pb.AckAppendResponse{}, nil
 }
+func (s *RaftServer) AppendLeaderLog(ctx context.Context, request *pb.AppendLeaderLogRequest) (*pb.AppendLeaderLogResponse, error) {
+	log.Printf("[RPC Served] AppendLeaderLog: %v\n", request)
+	isLeader, ok := s.raft.AppendLeaderLogForCurrentTerm(request.Msg)
+	return &pb.AppendLeaderLogResponse{IsLeader: isLeader, Ok: ok}, nil
+}
+func (s *RaftServer) CheckLeadership(ctx context.Context, request *pb.CheckLeadershipRequest) (*pb.CheckLeadershipResponse, error) {
+	return &pb.CheckLeadershipResponse{IsLeader: s.raft.CheckLeadership()}, nil
+}

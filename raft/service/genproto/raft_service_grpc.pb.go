@@ -19,10 +19,12 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	Raft_RequestVote_FullMethodName   = "/raft.Raft/RequestVote"
-	Raft_Vote_FullMethodName          = "/raft.Raft/Vote"
-	Raft_AppendEntries_FullMethodName = "/raft.Raft/AppendEntries"
-	Raft_AckAppend_FullMethodName     = "/raft.Raft/AckAppend"
+	Raft_RequestVote_FullMethodName     = "/raft.Raft/RequestVote"
+	Raft_Vote_FullMethodName            = "/raft.Raft/Vote"
+	Raft_AppendEntries_FullMethodName   = "/raft.Raft/AppendEntries"
+	Raft_AckAppend_FullMethodName       = "/raft.Raft/AckAppend"
+	Raft_AppendLeaderLog_FullMethodName = "/raft.Raft/AppendLeaderLog"
+	Raft_CheckLeadership_FullMethodName = "/raft.Raft/CheckLeadership"
 )
 
 // RaftClient is the client API for Raft service.
@@ -33,6 +35,8 @@ type RaftClient interface {
 	Vote(ctx context.Context, in *VoteRequest, opts ...grpc.CallOption) (*VoteResponse, error)
 	AppendEntries(ctx context.Context, in *AppendRequest, opts ...grpc.CallOption) (*AppendResponse, error)
 	AckAppend(ctx context.Context, in *AckAppendRequest, opts ...grpc.CallOption) (*AckAppendResponse, error)
+	AppendLeaderLog(ctx context.Context, in *AppendLeaderLogRequest, opts ...grpc.CallOption) (*AppendLeaderLogResponse, error)
+	CheckLeadership(ctx context.Context, in *CheckLeadershipRequest, opts ...grpc.CallOption) (*CheckLeadershipResponse, error)
 }
 
 type raftClient struct {
@@ -83,6 +87,26 @@ func (c *raftClient) AckAppend(ctx context.Context, in *AckAppendRequest, opts .
 	return out, nil
 }
 
+func (c *raftClient) AppendLeaderLog(ctx context.Context, in *AppendLeaderLogRequest, opts ...grpc.CallOption) (*AppendLeaderLogResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(AppendLeaderLogResponse)
+	err := c.cc.Invoke(ctx, Raft_AppendLeaderLog_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *raftClient) CheckLeadership(ctx context.Context, in *CheckLeadershipRequest, opts ...grpc.CallOption) (*CheckLeadershipResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CheckLeadershipResponse)
+	err := c.cc.Invoke(ctx, Raft_CheckLeadership_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // RaftServer is the server API for Raft service.
 // All implementations must embed UnimplementedRaftServer
 // for forward compatibility.
@@ -91,6 +115,8 @@ type RaftServer interface {
 	Vote(context.Context, *VoteRequest) (*VoteResponse, error)
 	AppendEntries(context.Context, *AppendRequest) (*AppendResponse, error)
 	AckAppend(context.Context, *AckAppendRequest) (*AckAppendResponse, error)
+	AppendLeaderLog(context.Context, *AppendLeaderLogRequest) (*AppendLeaderLogResponse, error)
+	CheckLeadership(context.Context, *CheckLeadershipRequest) (*CheckLeadershipResponse, error)
 	mustEmbedUnimplementedRaftServer()
 }
 
@@ -112,6 +138,12 @@ func (UnimplementedRaftServer) AppendEntries(context.Context, *AppendRequest) (*
 }
 func (UnimplementedRaftServer) AckAppend(context.Context, *AckAppendRequest) (*AckAppendResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method AckAppend not implemented")
+}
+func (UnimplementedRaftServer) AppendLeaderLog(context.Context, *AppendLeaderLogRequest) (*AppendLeaderLogResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method AppendLeaderLog not implemented")
+}
+func (UnimplementedRaftServer) CheckLeadership(context.Context, *CheckLeadershipRequest) (*CheckLeadershipResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method CheckLeadership not implemented")
 }
 func (UnimplementedRaftServer) mustEmbedUnimplementedRaftServer() {}
 func (UnimplementedRaftServer) testEmbeddedByValue()              {}
@@ -206,6 +238,42 @@ func _Raft_AckAppend_Handler(srv interface{}, ctx context.Context, dec func(inte
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Raft_AppendLeaderLog_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(AppendLeaderLogRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(RaftServer).AppendLeaderLog(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Raft_AppendLeaderLog_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(RaftServer).AppendLeaderLog(ctx, req.(*AppendLeaderLogRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Raft_CheckLeadership_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CheckLeadershipRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(RaftServer).CheckLeadership(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Raft_CheckLeadership_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(RaftServer).CheckLeadership(ctx, req.(*CheckLeadershipRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // Raft_ServiceDesc is the grpc.ServiceDesc for Raft service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -228,6 +296,14 @@ var Raft_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "AckAppend",
 			Handler:    _Raft_AckAppend_Handler,
+		},
+		{
+			MethodName: "AppendLeaderLog",
+			Handler:    _Raft_AppendLeaderLog_Handler,
+		},
+		{
+			MethodName: "CheckLeadership",
+			Handler:    _Raft_CheckLeadership_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
