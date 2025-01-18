@@ -51,7 +51,6 @@ type CandidateMeta struct {
 type RaftMutex struct {
 	// TODO: Have granular mutexes
 	GlobalDataMutex sync.RWMutex
-	LocalizedMutex  sync.Mutex
 }
 
 type RaftConsensusObject struct {
@@ -163,14 +162,20 @@ func (raft *RaftConsensusObject) RequestElection() {
 
 // Recieve a request for vote, decide whether to vote
 func (raft *RaftConsensusObject) RecvVoteRequest(candidateId string, candidatePrevLogTerm, candidatePrevLogIndex, candidateTerm, candidateLastCommitIndex int64) {
-	fmt.Printf("INFO: RecvVoteRequest called on %v, candidate: %v for term %v\n", raft.PeerIdentifer, candidateId, raft.Term)
-	raft.ElectionTimer.RestartIfEnabled()
-	// If self term as a leader is smaller than a candidate's, step down.
+	fmt.Printf("INFO: RecvVoteRequest called on %v, candidate: %v for term %v\n", raft.PeerIdentifer, candidateId, candidateTerm)
+	// raft.ElectionTimer.RestartIfEnabled() //  This was a mistake. This can starve a worthy leader from ever becoming one.
+
+	// If self term is smaller than a candidate's, step down and update.
 	if !raft.checkAndUpdateTerm(candidateTerm) {
 		raft.changePeerStateAndRetriggerTimers(RAFT_PEER_STATE_FOLLOWER)
 	}
 
 	vote := raft.DecideVote(candidateId, candidatePrevLogTerm, candidatePrevLogIndex, candidateTerm, candidateLastCommitIndex)
+
+	if vote {
+		raft.TermVotePeerId = candidateId
+		go raft.Storage.WritePersistent(raft.Term, candidateId)
+	}
 
 	raft.Network.ToPeer_Vote(candidateId, raft.PeerIdentifer, vote, raft.Term)
 }
@@ -213,7 +218,13 @@ func (raft *RaftConsensusObject) RecvVote(peerId string, granted bool, term int6
 // Decide if current peer should vote true or false to a vote request by another peer. Only returns vote decision.
 func (raft *RaftConsensusObject) DecideVote(candidateId string, candidatePrevLogTerm, candidatePrevLogIndex, candidateTerm, candidateLastCommitIndex int64) bool {
 	// check if you have already voted someone else this term.
-	if raft.Term > candidateTerm || (raft.TermVotePeerId != "" && raft.TermVotePeerId != candidateId) {
+	if raft.TermVotePeerId != "" && raft.TermVotePeerId != candidateId {
+		fmt.Printf("False vote for %v because already voted %v\n", candidateId, raft.TermVotePeerId)
+		return false
+	}
+
+	if raft.Term > candidateTerm {
+		fmt.Printf("False vote for %v due to lower term\n", candidateId)
 		return false
 	}
 
@@ -222,11 +233,13 @@ func (raft *RaftConsensusObject) DecideVote(candidateId string, candidatePrevLog
 	if raft.LogStartIdx+int64(len(raft.Log)) > candidatePrevLogIndex+1 ||
 		(raft.LogStartIdx+int64(len(raft.Log)) != 0 && raft.Log[len(raft.Log)-1].Term > candidatePrevLogTerm) {
 		raft.GlobalDataMutex.RUnlock()
+		fmt.Printf("False vote for %v due to lesser logs, or lower term last log. Candidate Last log: %v\n", candidateId, candidatePrevLogIndex)
 		return false
 	}
 	raft.GlobalDataMutex.RUnlock()
 	// Vote false if peer's commit index is higher than candidate's.
 	if raft.LastCommitIndex > candidateLastCommitIndex {
+		fmt.Printf("False vote for %v due to lower commit\n", candidateId)
 		return false
 	}
 
@@ -242,33 +255,38 @@ func (raft *RaftConsensusObject) DecideVote(candidateId string, candidatePrevLog
 func (raft *RaftConsensusObject) Append(msgs []*pb.LogEntry, leaderTerm, prevLogIdx, prevLogTerm, leaderCommit int64, leaderId string) {
 	fmt.Printf("INFO: Append called on %v, for term %v\n", raft.PeerIdentifer, raft.Term)
 
-	// If I would not vote this peer to be the leader, I will not listen to it.
-	if !raft.DecideVote(leaderId, prevLogTerm, prevLogIdx, leaderTerm, leaderCommit) && leaderId != raft.PeerIdentifer {
-		fmt.Printf("INFO: Refusing leader's append. I am better")
-		return
-	}
+	leaderTermIsGreater := raft.checkAndUpdateTerm(leaderTerm) // Check and update term even if less worthy leader is in power, otherwise you'll be starved.
 
-	if raft.PeerState != RAFT_PEER_STATE_FOLLOWER && leaderId != raft.PeerIdentifer {
-		fmt.Printf("INFO: Demoted %v from %v to follower", raft.PeerIdentifer, raft.PeerState)
+	// Step down if leader's term is greater.
+	if raft.PeerState != RAFT_PEER_STATE_FOLLOWER && leaderId != raft.PeerIdentifer && (leaderTermIsGreater || raft.Term == leaderTerm) {
+		fmt.Printf("INFO: Demoted %v from %v to follower: My term: %v, leader Term: %v, leader: %v\n", raft.PeerIdentifer, raft.PeerState, raft.Term, leaderTerm, leaderId)
 		raft.changePeerStateAndRetriggerTimers(RAFT_PEER_STATE_FOLLOWER)
 	}
 
-	raft.ElectionTimer.RestartIfEnabled()
-	raft.GlobalDataMutex.Lock()
 	success := true
-
-	_ = raft.checkAndUpdateTerm(leaderTerm)
-
+	leaderIsWorthy := true
+	matchIndex := int64(0) // Should be fine for !success
 	// TODO: even when snapshotting, keep one extra log index so that this check can be done
 	// the check being: term of the log at prevLogIdx should be the same on peer and leader.
-	if leaderTerm < raft.Term ||
-		(raft.LogStartIdx+int64(len(raft.Log)-1) < prevLogIdx) ||
-		(prevLogIdx != -1 && raft.Log[prevLogIdx-raft.LogStartIdx].Term != prevLogTerm) {
+	if leaderTerm < raft.Term /*|| (raft.LogStartIdx+int64(len(raft.Log)-1) < prevLogIdx)*/ || (prevLogIdx != -1 && raft.Log[prevLogIdx-raft.LogStartIdx].Term > prevLogTerm) || raft.LastCommitIndex > leaderCommit {
+		fmt.Printf("INFO: Leader is not worthy: My term: %v, leaderTerm: %v", raft.Term, leaderTerm)
+		leaderIsWorthy = false
+		success = false
+	}
+
+	// If my last log was before leader's, leader is still worthy, just need to
+	// overwrite own log. - not mentioned in the paper.
+	if prevLogIdx != -1 && raft.Log[prevLogIdx-raft.LogStartIdx].Term < prevLogTerm {
 
 		success = false
 	}
 
-	matchIndex := int64(0)
+	if leaderIsWorthy {
+		raft.ElectionTimer.RestartIfEnabled()
+	}
+
+	raft.GlobalDataMutex.Lock()
+
 	if success {
 		for i, newLog := range msgs {
 			if prevLogIdx+1+int64(i) < raft.LogStartIdx+int64(len(raft.Log)) {
@@ -288,7 +306,7 @@ func (raft *RaftConsensusObject) Append(msgs []*pb.LogEntry, leaderTerm, prevLog
 		// If at log index, term is equal. All logs before that index are equal.
 		// Therefore safe to commit till leaderCommit.
 		if raft.LastCommitIndex < leaderCommit {
-			raft.Commit(leaderCommit, leaderTerm)
+			raft.Commit(min(leaderCommit, int64(len(raft.Log)-1)))
 		}
 
 		fmt.Printf("\nINFO: Peer committed till: %v\n", raft.LastCommitIndex)
@@ -328,7 +346,7 @@ func (raft *RaftConsensusObject) RecvAppendAck(peerId string, peerTerm, matchInd
 	// Commit till the latest maximum match
 	maxMatch := raft.getMaximumMatch()
 	raft.GlobalDataMutex.RUnlock()
-	raft.Commit(maxMatch, raft.Term)
+	raft.Commit(maxMatch)
 
 	fmt.Printf("\nINFO: Leader committed till: %v\n", raft.LastCommitIndex)
 }
@@ -341,6 +359,7 @@ func (raft *RaftConsensusObject) SendAppends() {
 
 	var wg sync.WaitGroup
 
+	raft.GlobalDataMutex.Lock()
 	for _, peerId := range raft.AllPeers {
 		var msgs []*pb.LogEntry
 		nextIndex := int64(0)
@@ -362,17 +381,14 @@ func (raft *RaftConsensusObject) SendAppends() {
 		}
 		go raft.Network.ToPeer_Append(peerId, msgs, raft.Term, nextIndex-1, prevLogTerm, raft.LastCommitIndex, raft.PeerIdentifer, &wg)
 	}
-
+	raft.GlobalDataMutex.Unlock()
 	wg.Wait()
 	fmt.Printf("INFO: Done sending appends\n")
 }
 
 // NOT TOP LEVEL, DO NOT USE GLOBAL MUTEX
 // Write the current state of the log to disk. Not an RPC action, called from Append.
-func (raft *RaftConsensusObject) Commit(tillIdx, term int64) {
-	raft.LocalizedMutex.Lock()
-	defer raft.LocalizedMutex.Unlock()
-
+func (raft *RaftConsensusObject) Commit(tillIdx int64) {
 	for raft.LastCommitIndex < tillIdx {
 		// Don't attempt to commit past your own log.
 		if raft.LastCommitIndex > int64(len(raft.Log))+raft.LogStartIdx-1 {
@@ -381,7 +397,7 @@ func (raft *RaftConsensusObject) Commit(tillIdx, term int64) {
 		}
 
 		// TODO: potentially push to a queue
-		err := raft.Storage.WriteToLog(raft.Log[raft.LastCommitIndex+1-raft.LogStartIdx].Entry, term, raft.LastCommitIndex+1)
+		err := raft.Storage.WriteToLog(raft.Log[raft.LastCommitIndex+1-raft.LogStartIdx].Entry, raft.Log[raft.LastCommitIndex+1-raft.LogStartIdx].Term, raft.LastCommitIndex+1)
 		if err != nil {
 			fmt.Printf("Err: Could not commit to log - %v\n", err)
 			return
