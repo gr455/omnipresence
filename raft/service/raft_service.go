@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"github.com/gr455/omnipresence/mq"
 	"github.com/gr455/omnipresence/raft"
 	pb "github.com/gr455/omnipresence/raft/service/genproto"
 	"github.com/gr455/omnipresence/raft/storage"
@@ -18,7 +19,7 @@ type RaftServer struct {
 	pb.UnimplementedRaftServer
 }
 
-func NewRaftServer() *RaftServer {
+func NewRaftServer(mq *mq.MessageQueue) *RaftServer {
 	// Test code
 	peerId, exists := os.LookupEnv("RAFT_PEER_ID")
 	if !exists {
@@ -46,7 +47,7 @@ func NewRaftServer() *RaftServer {
 		"peer3": c3,
 	}
 
-	r, err := raft.NewRaftConsensusObject(peerId, s, 1, peers, p2pcMap)
+	r, err := raft.NewRaftConsensusObject(peerId, s, 1, peers, p2pcMap, mq)
 	if err != nil {
 		log.Fatalf("Cannot create raft object: %s", err)
 		return nil

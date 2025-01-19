@@ -9,6 +9,7 @@ package raft
 
 import (
 	"fmt"
+	"github.com/gr455/omnipresence/mq"
 	"github.com/gr455/omnipresence/raft/raftnet"
 	pb "github.com/gr455/omnipresence/raft/service/genproto"
 	raftstorage "github.com/gr455/omnipresence/raft/storage"
@@ -53,6 +54,10 @@ type RaftMutex struct {
 	GlobalDataMutex sync.RWMutex
 }
 
+type DSMeta struct {
+	Mq *mq.MessageQueue
+}
+
 type RaftConsensusObject struct {
 	// State of the peer - Leader, follower, candidate
 	PeerState RaftPeerState
@@ -76,19 +81,20 @@ type RaftConsensusObject struct {
 	Storage *raftstorage.RaftStorage
 	Network *raftnet.RaftNetwork
 
+	DSMeta
 	RaftMutex
 	LeaderMeta
 	CandidateMeta
 	RaftPeerRuntimeConstants
 }
 
-func NewRaftConsensusObject(id string, storage *raftstorage.RaftStorage, pcount uint16, peers []string, peerToPeerClientMap map[string]pb.RaftClient) (*RaftConsensusObject, error) {
+func NewRaftConsensusObject(id string, storage *raftstorage.RaftStorage, pcount uint16, peers []string, peerToPeerClientMap map[string]pb.RaftClient, mq *mq.MessageQueue) (*RaftConsensusObject, error) {
 	r := &RaftConsensusObject{}
-	return r.Initialize(id, storage, pcount, peers, peerToPeerClientMap)
+	return r.Initialize(id, storage, pcount, peers, peerToPeerClientMap, mq)
 }
 
 // Initialize does not lock anything. Make sure that no callbacks start running before init completes.
-func (raft *RaftConsensusObject) Initialize(id string, storage *raftstorage.RaftStorage, pcount uint16, peers []string, peerToPeerClientMap map[string]pb.RaftClient) (*RaftConsensusObject, error) {
+func (raft *RaftConsensusObject) Initialize(id string, storage *raftstorage.RaftStorage, pcount uint16, peers []string, peerToPeerClientMap map[string]pb.RaftClient, mq *mq.MessageQueue) (*RaftConsensusObject, error) {
 	raft.ElectionTimeoutMillis = uint16(rand.Intn(3_000)) + 5_000
 	raft.HeartbeatTimeMillis = 3000
 	raft.PeerIdentifer = id
@@ -99,6 +105,7 @@ func (raft *RaftConsensusObject) Initialize(id string, storage *raftstorage.Raft
 	raft.HeartbeatTimer = utils.NewTimer(raft.HeartbeatTimeMillis, raft.SendAppends /* debug= */, true)
 	raft.ElectionTimer = utils.NewTimer(raft.ElectionTimeoutMillis, raft.RequestElection /* debug= */, false)
 	raft.PeerState = RAFT_PEER_STATE_FOLLOWER
+	raft.Mq = mq
 
 	// temp code for file loads
 	log, startIdx, err := raft.Storage.ReadLog()
@@ -354,11 +361,18 @@ func (raft *RaftConsensusObject) Commit(tillIdx int64) {
 			break
 		}
 
-		// TODO: potentially push to a queue
-		err := raft.Storage.WriteToLog(raft.Log[raft.LastCommitIndex+1-raft.LogStartIdx].Entry, raft.Log[raft.LastCommitIndex+1-raft.LogStartIdx].Term, raft.LastCommitIndex+1)
+		msg := raft.Log[raft.LastCommitIndex+1-raft.LogStartIdx].Entry
+		term := raft.Log[raft.LastCommitIndex+1-raft.LogStartIdx].Term
+		err := raft.Storage.WriteToLog(msg, term, raft.LastCommitIndex+1)
 		if err != nil {
-			fmt.Printf("Err: Could not commit to log - %v\n", err)
+			fmt.Printf("Err: could not commit to log - %v\n", err)
 			return
+		}
+
+		err = raft.Mq.WriteBack(msg)
+		if err != nil {
+			fmt.Printf("Err: could not push to queue - %v\n", err)
+			// TODO: revert log if this fails.
 		}
 
 		raft.LastCommitIndex++
