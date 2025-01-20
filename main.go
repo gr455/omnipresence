@@ -30,13 +30,13 @@ func main() {
 
 	server := grpc.NewServer()
 	raftService := rservice.NewRaftServer(messageQueue)
-	if raftService != nil {
+	if raftService == nil {
 		log.Fatalf("Fatal: Could not create Raft server")
 		return
 	}
 
 	dsService := dservice.NewKeyValueServer(messageQueue)
-	if dsService != nil {
+	if dsService == nil {
 		log.Fatalf("Fatal: Could not create datastore server")
 		return
 	}

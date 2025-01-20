@@ -139,11 +139,11 @@ func (raft *RaftConsensusObject) Initialize(id string, storage *raftstorage.Raft
 	}
 
 	fmt.Println(raft.Log, raft.LogStartIdx)
-	fmt.Printf("Initialized %v\n", id)
 
 	raft.ElectionTimer.Enable()
 	raft.ElectionTimer.RestartIfEnabled()
 
+	fmt.Printf("Initialized %v\n", id)
 	return raft, nil
 }
 
@@ -310,8 +310,8 @@ func (raft *RaftConsensusObject) RecvAppendAck(peerId string, peerTerm, matchInd
 	raft.GlobalDataMutex.RLock()
 	// Commit till the latest maximum match
 	maxMatch := raft.getMaximumMatch()
-	raft.GlobalDataMutex.RUnlock()
 	raft.Commit(maxMatch)
+	raft.GlobalDataMutex.RUnlock()
 
 	fmt.Printf("\nINFO: Leader committed till: %v\n", raft.LastCommitIndex)
 }
