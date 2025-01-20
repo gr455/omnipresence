@@ -23,7 +23,7 @@ func NewRaftServer(mq *mq.MessageQueue) *RaftServer {
 	// Test code
 	peerId, exists := os.LookupEnv("RAFT_PEER_ID")
 	if !exists {
-		log.Fatalf("No peer ID for the server")
+		log.Fatalf("Fatal: No peer ID for the server")
 		return nil
 	}
 

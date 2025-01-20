@@ -2,8 +2,10 @@ package main
 
 import (
 	"fmt"
+	dservice "github.com/gr455/omnipresence/datastore/kv/service"
+	dspb "github.com/gr455/omnipresence/datastore/kv/service/genproto"
 	"github.com/gr455/omnipresence/mq"
-	"github.com/gr455/omnipresence/raft/service"
+	rservice "github.com/gr455/omnipresence/raft/service"
 	pb "github.com/gr455/omnipresence/raft/service/genproto"
 	"google.golang.org/grpc"
 	"log"
@@ -27,9 +29,20 @@ func main() {
 	messageQueue := mq.Initialize( /*bufferSize=*/ 100)
 
 	server := grpc.NewServer()
-	raftService := service.NewRaftServer(messageQueue)
+	raftService := rservice.NewRaftServer(messageQueue)
+	if raftService != nil {
+		log.Fatalf("Fatal: Could not create Raft server")
+		return
+	}
+
+	dsService := dservice.NewKeyValueServer(messageQueue)
+	if dsService != nil {
+		log.Fatalf("Fatal: Could not create datastore server")
+		return
+	}
 
 	pb.RegisterRaftServer(server, raftService)
+	dspb.RegisterKeyValueServer(server, dsService)
 
 	log.Printf("Raft server started at port: %v\n", listener.Addr().(*net.TCPAddr).Port)
 

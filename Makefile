@@ -1,4 +1,4 @@
-.PHONY: protogen build buildrace
+.PHONY: protogen build buildrace buildcore buildcorerace buildclient
 .DEFAULT_GOAL := build
 
 protogen:
@@ -16,8 +16,15 @@ protogen:
 		--go-grpc_opt=paths=source_relative\
 		--proto_path=datastore/kv/service/proto datastore/kv/service/proto/kv_service.proto;
 
-build: protogen
+buildclient: protogen
+	@go build -o bin/linux-amd64/ ./client/
+
+buildcore: protogen
 	@go build -o bin/linux-amd64/
 
-buildrace: protogen
-	@go build -o bin/linux-amd64/ -race
+buildcorerace: protogen
+	@go build -o bin/linux-amd64/ -race 
+
+build: protogen buildcore buildclient
+
+buildrace: protogen buildcorerace buildclient

@@ -12,15 +12,14 @@ type KeyValueStore struct {
 	ReadQ *mq.MessageQueue
 }
 
-func Initialize(readQ *mq.MessageQueue) *KeyValueStore {
+func Initialize(readQ *mq.MessageQueue) (*KeyValueStore, error) {
 	mp := &KeyValueStore{Map: make(map[string]string), ReadQ: readQ}
 	err := mp.SubscribeToQueue()
 	if err != nil {
-		fmt.Printf("Error: cannot subscribe to queue: %v", error)
-		return nil
+		return nil, errors.New(fmt.Sprintf("cannot subscribe to queue: %v", err))
 	}
 
-	return mp
+	return mp, nil
 }
 
 func (mp *KeyValueStore) Get(key string) string {
@@ -32,7 +31,7 @@ func (mp *KeyValueStore) Put(key, value string) {
 	mp.Map[key] = value
 }
 
-func (mp *KeyValueStore) GetMap() {
+func (mp *KeyValueStore) GetMap() map[string]string {
 	return mp.Map
 }
 
@@ -42,11 +41,12 @@ func (mp *KeyValueStore) SubscribeToQueue() error {
 	}
 
 	go func() {
-		for msg := range mp.ReadQ {
+		for msg := range mp.ReadQ.Channel {
 			key, value, err := ParseMessage(msg)
 			if err != nil {
-				fmt.Printf("Error: cannot parse message: %v", error)
+				fmt.Printf("Error: cannot parse message: %v", err)
 			}
+			mp.Put(key, value)
 		}
 	}()
 
@@ -56,7 +56,7 @@ func (mp *KeyValueStore) SubscribeToQueue() error {
 func ParseMessage(msg string) (string, string, error) {
 	words := strings.Fields(msg)
 	if len(words) != 2 {
-		return "", "", errors.New("illegal message format: %v", msg)
+		return "", "", errors.New(fmt.Sprintf("illegal message format: %v", msg))
 	}
 
 	return words[0], words[1], nil
