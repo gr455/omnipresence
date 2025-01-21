@@ -211,7 +211,7 @@ func (raft *RaftConsensusObject) RecvVote(peerId string, granted bool, term int6
 
 	raft.GlobalDataMutex.Unlock()
 
-	if raft.CurrentTermVotes > uint16(math.Ceil(float64(raft.PeerCount)/2.0)) {
+	if raft.CurrentTermVotes >= uint16(math.Ceil(float64(raft.PeerCount)/2.0)) {
 		raft.winElection()
 	} else {
 		fmt.Printf("INFO: not enough votes yet: %v for term %v\n", raft.CurrentTermVotes, raft.Term)

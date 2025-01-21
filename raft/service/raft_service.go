@@ -2,17 +2,12 @@ package service
 
 import (
 	"context"
-	"fmt"
 	"github.com/gr455/omnipresence/mq"
 	"github.com/gr455/omnipresence/raft"
 	pb "github.com/gr455/omnipresence/raft/service/genproto"
 	"github.com/gr455/omnipresence/raft/storage"
 	"github.com/gr455/omnipresence/raft/types"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/backoff"
 	"log"
-	"os"
-	"time"
 )
 
 type RaftServer struct {
@@ -21,47 +16,13 @@ type RaftServer struct {
 	pb.UnimplementedRaftServer
 }
 
-func NewRaftServer(mq *mq.MessageQueue) *RaftServer {
-	// Test code
-	peerId, exists := os.LookupEnv("RAFT_PEER_ID")
-	if !exists {
-		log.Fatalf("Fatal: No peer ID for the server")
-		return nil
-	}
+func NewRaftServer(peerId string, p2pcMap map[string]pb.RaftClient, peers []string, s *storage.RaftStorage, mq *mq.MessageQueue) *RaftServer {
 
-	peers := []string{"peer1", "peer2", "peer3"}
-
-	s := storage.NewRaftStorage(fmt.Sprintf("./raft/.log/%s/log.txt", peerId), fmt.Sprintf("./raft/.log/%s/persistent.txt", peerId))
-
-	opts := []grpc.DialOption{
-		grpc.WithInsecure(), // For demonstration purposes, use appropriate security
-		grpc.WithConnectParams(grpc.ConnectParams{
-			Backoff: backoff.Config{
-				BaseDelay: 200 * time.Millisecond,
-				MaxDelay:  200 * time.Millisecond,
-			},
-		}),
-	}
-	conn1, err := grpc.Dial("localhost:50051", opts...)
-	conn2, err := grpc.Dial("localhost:50052", opts...)
-	conn3, err := grpc.Dial("localhost:50053", opts...)
-
-	c1 := pb.NewRaftClient(conn1)
-	c2 := pb.NewRaftClient(conn2)
-	c3 := pb.NewRaftClient(conn3)
-	p2pcMap := map[string]pb.RaftClient{
-		"peer1": c1,
-		"peer2": c2,
-		"peer3": c3,
-	}
-
-	r, err := raft.NewRaftConsensusObject(peerId, s, 1, peers, p2pcMap, mq)
+	r, err := raft.NewRaftConsensusObject(peerId, s, uint16(len(peers)), peers, p2pcMap, mq)
 	if err != nil {
 		log.Fatalf("Cannot create raft object: %s", err)
 		return nil
 	}
-
-	// END of Test code
 
 	return &RaftServer{raft: r}
 }
