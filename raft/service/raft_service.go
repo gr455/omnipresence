@@ -9,8 +9,10 @@ import (
 	"github.com/gr455/omnipresence/raft/storage"
 	"github.com/gr455/omnipresence/raft/types"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/backoff"
 	"log"
 	"os"
+	"time"
 )
 
 type RaftServer struct {
@@ -33,6 +35,12 @@ func NewRaftServer(mq *mq.MessageQueue) *RaftServer {
 
 	opts := []grpc.DialOption{
 		grpc.WithInsecure(), // For demonstration purposes, use appropriate security
+		grpc.WithConnectParams(grpc.ConnectParams{
+			Backoff: backoff.Config{
+				BaseDelay: 200 * time.Millisecond,
+				MaxDelay:  200 * time.Millisecond,
+			},
+		}),
 	}
 	conn1, err := grpc.Dial("localhost:50051", opts...)
 	conn2, err := grpc.Dial("localhost:50052", opts...)
