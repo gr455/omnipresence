@@ -44,7 +44,8 @@ func (mp *KeyValueStore) SubscribeToQueue() error {
 		for msg := range mp.ReadQ.Channel {
 			key, value, err := ParseMessage(msg)
 			if err != nil {
-				fmt.Printf("Error: cannot parse message: %v", err)
+				fmt.Printf("Error: cannot parse message: %v. Skipping\n", err)
+				continue
 			}
 			mp.Put(key, value)
 		}

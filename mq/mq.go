@@ -29,3 +29,7 @@ func (q *MessageQueue) WriteBack(msg string) error {
 
 	}
 }
+
+func (q *MessageQueue) BlockOrWriteBack(msg string) {
+	q.Channel <- msg
+}

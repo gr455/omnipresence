@@ -138,6 +138,7 @@ func (raft *RaftConsensusObject) Initialize(id string, storage *raftstorage.Raft
 		raft.NextIndex[peer] = 0
 	}
 
+	raft.reinstateDatastore()
 	fmt.Println(raft.Log, raft.LogStartIdx)
 
 	raft.ElectionTimer.Enable()
@@ -145,6 +146,12 @@ func (raft *RaftConsensusObject) Initialize(id string, storage *raftstorage.Raft
 
 	fmt.Printf("Initialized %v\n", id)
 	return raft, nil
+}
+
+func (raft *RaftConsensusObject) reinstateDatastore() {
+	for _, logEntry := range raft.Log {
+		raft.Mq.BlockOrWriteBack(logEntry.Entry)
+	}
 }
 
 // Send out broadcast requests to all the peers asking them to vote this peer.
