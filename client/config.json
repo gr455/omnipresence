@@ -1,0 +1,16 @@
+{
+	"peers": [
+		{
+			"id": "peer1",
+			"endpoint": "localhost:50051"
+		},
+		{
+			"id": "peer2",
+			"endpoint": "localhost:50052"
+		},
+		{
+			"id": "peer3",
+			"endpoint": "localhost:50053"
+		}
+	]	
+}
