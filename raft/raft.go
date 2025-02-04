@@ -187,6 +187,7 @@ func (raft *RaftConsensusObject) RecvVoteRequest(candidateId string, candidatePr
 	vote := raft.decideVote(candidateId, candidatePrevLogTerm, candidatePrevLogIndex, candidateTerm, candidateLastCommitIndex)
 
 	if vote {
+		raft.ElectionTimer.RestartIfEnabled()
 		raft.TermVotePeerId = candidateId
 		go raft.Storage.WritePersistent(raft.Term, candidateId)
 	}

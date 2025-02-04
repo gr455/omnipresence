@@ -7,6 +7,7 @@ import (
 	"io/ioutil"
 	"log"
 	"os"
+	"path/filepath"
 	"sync"
 )
 
@@ -48,9 +49,9 @@ func NewRaftStorage(logfilePath, persistentMetaPath string) *RaftStorage {
 }
 
 func CreateDefaultLogFile(logfilePath string) {
-	file, err := os.Create(logfilePath)
+	file, err := touch(logfilePath)
 	if err != nil {
-		log.Fatalf("Err: Could not create log file")
+		log.Fatalf("Err: Could not create log file: %v", err)
 		return
 	}
 
@@ -174,4 +175,11 @@ func (storage *RaftStorage) WritePersistent(term int64, votedFor string) error {
 	}
 
 	return nil
+}
+
+func touch(path string) (*os.File, error) {
+	if err := os.MkdirAll(filepath.Dir(path), 0770); err != nil {
+		return nil, err
+	}
+	return os.Create(path)
 }
