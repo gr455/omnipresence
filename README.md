@@ -5,9 +5,9 @@ Omnipresence uses the Raft consensus algorithm for its replication engine.
 
 ## Run
 1. Run `make`
-2. Add details about your raft nodes in `config.json` and `client/config.json`
+2. Use default (5 peers) or Add details about your raft nodes in `config.json` and `client/config.json`
 3. Within the `bin/` directory, find the `omnipresence` binary
-4. Set `RAFT_PEER_ID` and `RAFT_PEER_PORT` env vars and run the binary to start a single Raft node.
+4. Set `RAFT_PEER_ID` and `RAFT_PEER_PORT` env vars and run the binary to start a single Raft node. These should match the ones in config.
 ```
 RAFT_PEER_ID=peer1 RAFT_PEER_PORT=50051 bin/linux-amd64/omnipresence
 ```
